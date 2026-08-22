@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /vendor
+Disallow: /account
+Disallow: /checkout
+Disallow: /.netlify/
+
+Sitemap: https://YOUR-DOMAIN.co.za/sitemap.xml
