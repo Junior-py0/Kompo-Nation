@@ -842,3 +842,33 @@ button, a { -webkit-tap-highlight-color: transparent; }
     font-size: 0.67rem;
   }
 }
+
+/* STEP11 MANAGEMENT TERMINAL */
+.terminal-product-list{display:grid;gap:1rem}.terminal-product-card{background:rgba(255,255,255,.66);border:1px solid rgba(36,43,38,.12);border-radius:24px;padding:1.1rem;box-shadow:0 12px 36px rgba(34,39,35,.06)}
+.terminal-product-summary,.terminal-danger-zone{display:flex;align-items:center;justify-content:space-between;gap:1rem}.terminal-actions{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
+.terminal-product-panel{margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(36,43,38,.12)}.terminal-two-column{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.size-picker{display:flex;flex-wrap:wrap;gap:.45rem;margin:.5rem 0}.size-check input{position:absolute;opacity:0}.size-check span{display:inline-flex;padding:.55rem .75rem;border:1px solid rgba(36,43,38,.18);border-radius:999px;cursor:pointer;background:rgba(255,255,255,.65)}
+.size-check input:checked+span{background:#252d28;color:white;border-color:#252d28}.terminal-media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.65rem}.terminal-media-card{margin:0;border:1px solid rgba(36,43,38,.12);border-radius:16px;overflow:hidden;background:white}
+.terminal-media-card img{width:100%;aspect-ratio:4/5;object-fit:cover;display:block}.terminal-media-card figcaption{padding:.5rem;display:grid;gap:.35rem;font-size:.78rem}.mini-field{width:90px;padding:.45rem;border:1px solid rgba(36,43,38,.16);border-radius:9px}
+.terminal-add-variant{margin-top:1rem;padding:1rem;border-radius:18px;background:rgba(255,255,255,.55)}.terminal-danger-zone{margin-top:1rem;padding:1rem;border:1px solid rgba(138,45,45,.2);border-radius:18px}.danger-action{color:#8a2d2d!important}
+.checkout-address-choice{display:grid;grid-template-columns:repeat(2,1fr);gap:.75rem}.choice-card{display:flex!important;gap:.7rem;padding:1rem;border:1px solid rgba(36,43,38,.14);border-radius:18px;background:rgba(255,255,255,.62);cursor:pointer}.choice-card span{display:grid;gap:.2rem}
+@media(max-width:800px){.terminal-two-column,.checkout-address-choice{grid-template-columns:1fr}.terminal-product-summary,.terminal-danger-zone{align-items:flex-start;flex-direction:column}}
+
+
+/* STEP11A3 VARIANT UX */
+.option-list input:disabled + span {
+  opacity: .42;
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+.cart-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.terminal-product-panel[hidden] {
+  display: none !important;
+}

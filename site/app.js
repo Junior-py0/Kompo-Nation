@@ -611,138 +611,187 @@ function renderStore() {
   `;
 }
 
-function renderProduct() {
-  const product = state.products.find(
-    (item) =>
-      item.slug === slugPart(1)
-  );
-
-  if (!product) {
-    return renderNotFound();
+function productVariants(product) {
+  if (Array.isArray(product.variants) && product.variants.length) {
+    return product.variants.filter((variant) => variant.active !== false);
   }
 
-  setMeta(
-    product.name,
-    product.description
-  );
+  const sizes = product.sizes?.length ? product.sizes : ["One size"];
+  const colours = product.colours?.length ? product.colours : ["Default"];
 
-  const store = storeFor(product);
-
-  app.innerHTML = `
-    <section class="product-detail">
-      <div>
-        ${productVisual(product, true)}
-      </div>
-
-      <div class="product-detail-copy glass">
-        <p class="eyebrow">
-          ${escapeHtml(store?.name || "KOMPO NATION")}
-          ·
-          ${escapeHtml(product.category)}
-        </p>
-
-        <h1>
-          ${escapeHtml(product.name)}
-        </h1>
-
-        <p class="product-detail-price">
-          ${money(product.priceCents)}
-        </p>
-
-        <p>
-          ${escapeHtml(product.description)}
-        </p>
-
-        <form id="product-form">
-
-          <div class="option-group">
-            <span>SIZE</span>
-
-            <div class="option-list">
-              ${product.sizes.map((size, index) => `
-                <label>
-                  <input
-                    type="radio"
-                    name="size"
-                    value="${escapeHtml(size)}"
-                    ${index === 0 ? "checked" : ""}
-                  >
-                  <span>
-                    ${escapeHtml(size)}
-                  </span>
-                </label>
-              `).join("")}
-            </div>
-          </div>
-
-          <div class="option-group">
-            <span>COLOUR</span>
-
-            <div class="option-list">
-              ${product.colours.map((colour, index) => `
-                <label>
-                  <input
-                    type="radio"
-                    name="colour"
-                    value="${escapeHtml(colour)}"
-                    ${index === 0 ? "checked" : ""}
-                  >
-                  <span>
-                    ${escapeHtml(colour)}
-                  </span>
-                </label>
-              `).join("")}
-            </div>
-          </div>
-
-          <div class="detail-actions">
-            <button
-              class="primary-button"
-              type="submit"
-            >
-              Add to bag · ${money(product.priceCents)}
-            </button>
-
-            <button
-              class="quiet-button"
-              type="button"
-              data-wish="${product.id}"
-            >
-              ${
-                state.wishlist.includes(product.id)
-                  ? "Saved"
-                  : "♡"
-              }
-            </button>
-          </div>
-        </form>
-
-        <p>
-          <small>
-            ${product.stock}
-            currently available online ·
-            SKU ${escapeHtml(product.sku)}
-          </small>
-        </p>
-      </div>
-    </section>
-  `;
-
-  document
-    .querySelector("#product-form")
-    .addEventListener("submit", (event) => {
-      event.preventDefault();
-
-      const form =
-        new FormData(event.currentTarget);
-
-      addToCart(
-        product.id,
-        form.get("size"),
-        form.get("colour")
-      );
-    });
+  return sizes.flatMap((size) => colours.map((colour) => ({
+    id: `${product.id}-${size}-${colour}`,
+    sku: product.sku || "",
+    size,
+    colour,
+    priceCents: Number(product.priceCents),
+    stock: Number(product.stock),
+    active: true,
+    fallback: true,
+  })));
 }
+
+function selectedVariant(product, size, colour) {
+  return productVariants(product).find(
+    (variant) => variant.size === size && variant.colour === colour
+  ) || null;
+}
+
+function renderProduct() {
+  const product = state.products.find((item) => item.slug === slugPart(1));
+  if (!product) return renderNotFound();
+
+  setMeta(product.name, product.description);
+  const store = storeFor(product);
+  const variants = productVariants(product);
+
+  if (!variants.length) {
+    app.innerHTML = `<section class="empty-state glass">
+      <span>◇</span>
+      <h1>${escapeHtml(product.name)} is unavailable.</h1>
+      <p>This product currently has no active options.</p>
+      <a class="primary-button" href="/shop">Back to shop</a>
+    </section>`;
+    return;
+  }
+
+  const sizes = [...new Set(variants.map((variant) => variant.size))];
+  const initialSize =
+    sizes.find((size) =>
+      variants.some((variant) => variant.size === size && variant.stock > 0)
+    ) || sizes[0];
+
+  app.innerHTML = `<section class="product-detail">
+    <div>${productVisual(product, true)}</div>
+
+    <div class="product-detail-copy glass">
+      <p class="eyebrow">${escapeHtml(store?.name || "KOMPO NATION")} · ${escapeHtml(product.category)}</p>
+      <h1>${escapeHtml(product.name)}</h1>
+      <p class="product-detail-price" id="variant-price">${money(product.priceCents)}</p>
+      <p>${escapeHtml(product.description)}</p>
+
+      <form id="product-form">
+        <div class="option-group">
+          <span>SIZE</span>
+          <div class="option-list">
+            ${sizes.map((size) => {
+              const sizeStock = variants
+                .filter((variant) => variant.size === size)
+                .reduce((sum, variant) => sum + Number(variant.stock), 0);
+
+              return `<label>
+                <input
+                  type="radio"
+                  name="size"
+                  value="${escapeHtml(size)}"
+                  ${size === initialSize ? "checked" : ""}
+                  ${sizeStock < 1 ? "disabled" : ""}
+                >
+                <span>${escapeHtml(size)}${sizeStock < 1 ? " · Sold out" : ""}</span>
+              </label>`;
+            }).join("")}
+          </div>
+        </div>
+
+        <div class="option-group">
+          <span>COLOUR</span>
+          <div class="option-list" id="variant-colours"></div>
+        </div>
+
+        <div class="detail-actions">
+          <button class="primary-button" id="variant-add-button" type="submit">
+            Choose an available option
+          </button>
+
+          <button class="quiet-button" type="button" data-wish="${product.id}">
+            ${state.wishlist.includes(product.id) ? "Saved" : "♡"}
+          </button>
+        </div>
+      </form>
+
+      <p id="variant-availability"><small>Checking availability…</small></p>
+    </div>
+  </section>`;
+
+  const form = document.querySelector("#product-form");
+  const colourList = document.querySelector("#variant-colours");
+  const price = document.querySelector("#variant-price");
+  const availability = document.querySelector("#variant-availability");
+  const addButton = document.querySelector("#variant-add-button");
+
+  function drawColours() {
+    const size = form.elements.size?.value || initialSize;
+    const matching = variants.filter((variant) => variant.size === size);
+    const oldColour = form.elements.colour?.value;
+
+    const firstAvailableIndex = matching.findIndex(
+      (variant) => Number(variant.stock) > 0
+    );
+
+    colourList.innerHTML = matching.map((variant, index) => `<label>
+      <input
+        type="radio"
+        name="colour"
+        value="${escapeHtml(variant.colour)}"
+        ${Number(variant.stock) < 1 ? "disabled" : ""}
+        ${
+          oldColour === variant.colour ||
+          (!oldColour && index === firstAvailableIndex)
+            ? "checked"
+            : ""
+        }
+      >
+      <span>${escapeHtml(variant.colour)}${Number(variant.stock) < 1 ? " · Sold out" : ""}</span>
+    </label>`).join("");
+
+    syncVariant();
+  }
+
+  function syncVariant() {
+    const size = form.elements.size?.value;
+    const colour = form.elements.colour?.value;
+    const variant = selectedVariant(product, size, colour);
+
+    if (!variant || Number(variant.stock) < 1) {
+      addButton.disabled = true;
+      addButton.textContent = "This option is sold out";
+      availability.innerHTML =
+        "<small>Choose another available size or colour.</small>";
+      return;
+    }
+
+    price.textContent = money(variant.priceCents);
+    addButton.disabled = false;
+    addButton.textContent = `Add to bag · ${money(variant.priceCents)}`;
+
+    availability.innerHTML = `<small>
+      ${variant.stock} available online
+      ${variant.sku ? ` · SKU ${escapeHtml(variant.sku)}` : ""}
+    </small>`;
+  }
+
+  form.addEventListener("change", (event) => {
+    if (event.target.name === "size") drawColours();
+    if (event.target.name === "colour") syncVariant();
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    const size = form.elements.size?.value;
+    const colour = form.elements.colour?.value;
+
+    if (!size || !colour) {
+      showToast("Choose an available size and colour.");
+      return;
+    }
+
+    addToCart(product.id, size, colour);
+  });
+
+  drawColours();
+}
+
 
 function renderAbout() {
   app.innerHTML = `
@@ -852,561 +901,286 @@ function renderInformation(type) {
 /* 04. CART AND CHECKOUT                                                      */
 /* ========================================================================== */
 
-function addToCart(
-  productId,
-  size,
-  colour
-) {
-  const product =
-    state.products.find(
-      (item) =>
-        item.id === productId
-    );
+function addToCart(productId, size, colour) {
+  const product = state.products.find((item) => item.id === productId);
 
-  if (!product || product.stock < 1) {
-    return showToast(
-      "This piece is currently unavailable."
-    );
+  if (!product) {
+    showToast("This product is no longer available.");
+    return;
   }
 
-  const chosenSize =
-    String(size || product.sizes[0]);
+  const variant = selectedVariant(
+    product,
+    String(size || ""),
+    String(colour || "")
+  );
 
-  const chosenColour =
-    String(colour || product.colours[0]);
+  if (!variant || Number(variant.stock) < 1) {
+    showToast("That size and colour combination is sold out.");
+    return;
+  }
 
-  const existing =
-    state.cart.find(
-      (line) =>
-        line.productId === productId &&
-        line.size === chosenSize &&
-        line.colour === chosenColour
-    );
+  const existing = state.cart.find(
+    (line) =>
+      line.productId === productId &&
+      line.size === variant.size &&
+      line.colour === variant.colour
+  );
 
   if (existing) {
-    existing.quantity =
-      Math.min(
-        existing.quantity + 1,
-        product.stock
+    if (existing.quantity >= Number(variant.stock)) {
+      showToast(
+        `Only ${variant.stock} of this option ${Number(variant.stock) === 1 ? "is" : "are"} available.`
       );
+      return;
+    }
+
+    existing.quantity += 1;
   } else {
     state.cart.push({
       productId,
+      variantId: variant.id,
       quantity: 1,
-      size: chosenSize,
-      colour: chosenColour
+      size: variant.size,
+      colour: variant.colour,
     });
   }
 
   saveCommerceState();
 
   showToast(
-    `${product.name} is in your bag.`
+    `${product.name} · ${variant.size} · ${variant.colour} is in your bag.`
   );
 }
 
 function cartRows() {
   return state.cart
-    .map((line) => ({
-      ...line,
-      product: state.products.find(
-        (product) =>
-          product.id === line.productId
-      )
-    }))
-    .filter(
-      (line) =>
-        line.product
-    );
+    .map((line) => {
+      const product = state.products.find(
+        (item) => item.id === line.productId
+      );
+
+      if (!product) return null;
+
+      const variant = selectedVariant(
+        product,
+        line.size,
+        line.colour
+      );
+
+      if (!variant) return null;
+
+      return {
+        ...line,
+        product,
+        variant,
+        unitPriceCents: Number(variant.priceCents),
+      };
+    })
+    .filter(Boolean);
 }
 
 function renderCart() {
   const rows = cartRows();
 
   if (!rows.length) {
-    app.innerHTML = `
-      <section class="empty-state glass">
-        <span>◇</span>
-
-        <h1>Your bag is open.</h1>
-
-        <p>
-          Find a piece from across the nation
-          and bring it back here.
-        </p>
-
-        <a
-          class="primary-button"
-          href="/shop"
-        >
-          Start shopping
-        </a>
-      </section>
-    `;
-
+    app.innerHTML = `<section class="empty-state glass">
+      <span>◇</span>
+      <h1>Your bag is open.</h1>
+      <p>Find a piece from across the nation and bring it back here.</p>
+      <a class="primary-button" href="/shop">Start shopping</a>
+    </section>`;
     return;
   }
 
-  const subtotal =
-    rows.reduce(
-      (sum, line) =>
-        sum +
-        line.product.priceCents *
-        line.quantity,
-      0
-    );
+  const subtotal = rows.reduce(
+    (sum, line) => sum + line.unitPriceCents * line.quantity,
+    0
+  );
 
-  app.innerHTML = `
-    <section class="commerce-layout">
-      <div class="commerce-main glass">
-        <p class="eyebrow">
-          YOUR BAG
-        </p>
+  app.innerHTML = `<section class="commerce-layout">
+    <div class="commerce-main glass">
+      <p class="eyebrow">YOUR BAG</p>
+      <h1>${rows.reduce((sum, line) => sum + line.quantity, 0)} pieces.</h1>
 
-        <h1>
+      ${rows.map((line) => `<article class="cart-line">
+        <div class="cart-thumb">
           ${
-            rows.reduce(
-              (sum, line) =>
-                sum + line.quantity,
-              0
-            )
+            line.product.imageUrl
+              ? `<img src="${escapeHtml(line.product.imageUrl)}" alt="${escapeHtml(line.product.name)}">`
+              : ""
           }
-          pieces.
-        </h1>
+        </div>
 
-        ${rows.map((line) => `
-          <article class="cart-line">
-            <div
-              class="cart-thumb"
-              style="
-                background:
-                  linear-gradient(
-                    145deg,
-                    white,
-                    ${tone(line.product.tone)}
-                  )
-              "
-            ></div>
+        <div>
+          <h3>${escapeHtml(line.product.name)}</h3>
+          <p>
+            ${escapeHtml(storeFor(line.product)?.name || "Kompo Nation")}
+            · ${escapeHtml(line.size)}
+            · ${escapeHtml(line.colour)}
+          </p>
 
-            <div>
-              <h3>
-                ${escapeHtml(line.product.name)}
-              </h3>
+          <small>${line.variant.stock} currently available</small>
 
-              <p>
-                ${escapeHtml(storeFor(line.product)?.name)}
-                ·
-                ${escapeHtml(line.size)}
-                ·
-                ${escapeHtml(line.colour)}
-              </p>
+          <div class="line-controls">
+            <button
+              data-quantity="-1"
+              data-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
+            >−</button>
 
-              <div class="line-controls">
-                <button
-                  data-quantity="-1"
-                  data-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
-                >
-                  −
-                </button>
+            <span>${line.quantity}</span>
 
-                <span>
-                  ${line.quantity}
-                </span>
+            <button
+              data-quantity="1"
+              data-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
+              ${line.quantity >= Number(line.variant.stock) ? "disabled" : ""}
+            >+</button>
 
-                <button
-                  data-quantity="1"
-                  data-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
-                >
-                  +
-                </button>
+            <button
+              class="remove-line"
+              data-remove-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
+            >Remove</button>
+          </div>
+        </div>
 
-                <button
-                  class="remove-line"
-                  data-remove-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
+        <strong>${money(line.unitPriceCents * line.quantity)}</strong>
+      </article>`).join("")}
+    </div>
 
-            <strong>
-              ${
-                money(
-                  line.product.priceCents *
-                  line.quantity
-                )
-              }
-            </strong>
-          </article>
-        `).join("")}
+    <aside class="order-summary glass">
+      <h2>Summary</h2>
+
+      <div class="summary-line">
+        <span>Merchandise</span>
+        <strong>${money(subtotal)}</strong>
       </div>
 
-      <aside class="order-summary glass">
-        <h2>Summary</h2>
+      <div class="summary-line">
+        <span>Delivery</span>
+        <span>Quoted at checkout</span>
+      </div>
 
-        <div class="summary-line">
-          <span>Merchandise</span>
-          <strong>${money(subtotal)}</strong>
-        </div>
+      <div class="summary-line summary-total">
+        <span>Total before delivery</span>
+        <strong>${money(subtotal)}</strong>
+      </div>
 
-        <div class="summary-line">
-          <span>Delivery</span>
-          <span>Quoted at checkout</span>
-        </div>
+      <a class="primary-button" href="/checkout">
+        Continue to checkout
+      </a>
 
-        <div class="summary-line summary-total">
-          <span>Total before delivery</span>
-          <strong>${money(subtotal)}</strong>
-        </div>
-
-        <a
-          class="primary-button"
-          href="/checkout"
-        >
-          Continue to checkout
-        </a>
-
-        <p>
-          <small>
-            One payment can create separate
-            store packages and tracking references.
-          </small>
-        </p>
-      </aside>
-    </section>
-  `;
+      <p>
+        <small>
+          Each store can become a separate package while you make one payment.
+        </small>
+      </p>
+    </aside>
+  </section>`;
 }
 
+
 async function renderCheckout() {
-  if (!state.session) {
-    location.href =
-      loginPath("/checkout");
-
-    return;
-  }
-
+  if (!state.session) { location.href = loginPath("/checkout"); return; }
   const rows = cartRows();
+  if (!rows.length) return renderCart();
 
-  if (!rows.length) {
-    return renderCart();
-  }
+  const subtotal = rows.reduce((sum,line) => sum + line.unitPriceCents * line.quantity, 0);
+  const { data: addresses, error } = await supabase.from("addresses").select("*").order("is_default",{ascending:false}).order("created_at");
+  if (error) throw error;
+  state.checkoutAddresses = addresses || [];
 
-  const subtotal =
-    rows.reduce(
-      (sum, line) =>
-        sum +
-        line.product.priceCents *
-        line.quantity,
-      0
-    );
+  const profileName = state.session.user.user_metadata?.full_name || "";
+  const phone = state.session.user.user_metadata?.phone || "";
+  const hasSaved = state.checkoutAddresses.length > 0;
 
-  const profileName =
-    state.session.user.user_metadata?.full_name || "";
-
-  const phone =
-    state.session.user.user_metadata?.phone || "";
-
-  app.innerHTML = `
-    <section class="commerce-layout">
-
-      <div class="commerce-main glass">
-
-        <p class="eyebrow">
-          SECURE CHECKOUT
-        </p>
-
-        <h1>
-          Where is it going?
-        </h1>
-
-        <form
-          id="checkout-form"
-          class="stack-form"
-        >
-
-          <div class="form-grid">
-
-            <label>
-              Full name
-
-              <input
-                name="fullName"
-                value="${escapeHtml(profileName)}"
-                autocomplete="name"
-                required
-              >
-            </label>
-
-            <label>
-              Phone number
-
-              <input
-                name="phone"
-                value="${escapeHtml(phone)}"
-                autocomplete="tel"
-                required
-              >
-            </label>
-
-          </div>
-
-          <label>
-            Email address
-
-            <input
-              name="email"
-              type="email"
-              value="${escapeHtml(state.session.user.email)}"
-              readonly
-            >
-          </label>
-
-          <label>
-            Street address
-
-            <input
-              name="streetAddress"
-              autocomplete="street-address"
-              required
-            >
-          </label>
-
-          <div class="form-grid">
-
-            <label>
-              Area or suburb
-
-              <input
-                name="localArea"
-                required
-              >
-            </label>
-
-            <label>
-              City
-
-              <input
-                name="city"
-                required
-              >
-            </label>
-
-          </div>
-
-          <div class="form-grid">
-
-            <label>
-              Province
-
-              <select
-                name="province"
-                required
-              >
-                <option value="Limpopo">Limpopo</option>
-                <option value="Gauteng">Gauteng</option>
-                <option value="Mpumalanga">Mpumalanga</option>
-                <option value="North West">North West</option>
-                <option value="KwaZulu-Natal">KwaZulu-Natal</option>
-                <option value="Free State">Free State</option>
-                <option value="Northern Cape">Northern Cape</option>
-                <option value="Eastern Cape">Eastern Cape</option>
-                <option value="Western Cape">Western Cape</option>
-              </select>
-            </label>
-
-            <label>
-              Postal code
-
-              <input
-                name="postalCode"
-                inputmode="numeric"
-                required
-              >
-            </label>
-
-          </div>
-
-          <button
-            class="primary-button"
-            id="checkout-submit"
-            type="submit"
-          >
-            Get delivery and continue
-          </button>
-
-          <p
-            class="form-message"
-            id="checkout-message"
-            aria-live="polite"
-          ></p>
-
-        </form>
-
+  app.innerHTML = `<section class="commerce-layout"><div class="commerce-main glass">
+    <p class="eyebrow">SECURE CHECKOUT</p><h1>Where is it going?</h1>
+    <form id="checkout-form" class="stack-form">
+      <div class="checkout-address-choice">
+        ${hasSaved ? `<label class="choice-card"><input type="radio" name="addressMode" value="saved" checked><span><strong>Saved address</strong><small>Use one already on your account.</small></span></label>` : ""}
+        <label class="choice-card"><input type="radio" name="addressMode" value="new" ${hasSaved ? "" : "checked"}><span><strong>New address</strong><small>Enter another delivery address.</small></span></label>
       </div>
 
-      <aside class="order-summary glass">
+      ${hasSaved ? `<div id="saved-address-fields"><label>Deliver to<select name="savedAddressId">${state.checkoutAddresses.map((a) => `<option value="${a.id}">${escapeHtml(a.label)} — ${escapeHtml(a.street_address)}, ${escapeHtml(a.city)}</option>`).join("")}</select></label></div>` : ""}
 
-        <h2>Your order</h2>
+      <div id="new-address-fields" ${hasSaved ? "hidden" : ""}>
+        <div class="form-grid"><label>Full name<input name="fullName" value="${escapeHtml(profileName)}"></label><label>Phone<input name="phone" value="${escapeHtml(phone)}"></label></div>
+        <label>Email<input name="email" type="email" value="${escapeHtml(state.session.user.email)}" readonly></label>
+        <label>Street address<input name="streetAddress"></label>
+        <div class="form-grid"><label>Area or suburb<input name="localArea"></label><label>City<input name="city"></label></div>
+        <div class="form-grid"><label>Province<select name="province"><option>Limpopo</option><option>Gauteng</option><option>Mpumalanga</option><option>North West</option><option>KwaZulu-Natal</option><option>Free State</option><option>Northern Cape</option><option>Eastern Cape</option><option>Western Cape</option></select></label><label>Postal code<input name="postalCode"></label></div>
+        <label class="switch-line"><input type="checkbox" name="saveNewAddress"> Save this address</label>
+        <label id="checkout-address-label" hidden>Address label<input name="addressLabel" placeholder="Home, Work, Campus"></label>
+      </div>
 
-        ${rows.map((line) => `
-          <div class="summary-line">
-            <span>
-              ${line.quantity}
-              ×
-              ${escapeHtml(line.product.name)}
-            </span>
+      <button class="primary-button" id="checkout-submit">Get delivery and continue</button>
+      <p class="form-message" id="checkout-message" aria-live="polite"></p>
+    </form></div>
+    <aside class="order-summary glass"><h2>Your order</h2>${rows.map((line) => `<div class="summary-line"><span>${line.quantity} × ${escapeHtml(line.product.name)}</span><strong>${money(line.quantity*line.product.priceCents)}</strong></div>`).join("")}<div class="summary-line summary-total"><span>Before delivery</span><strong>${money(subtotal)}</strong></div><p><small>Payment becomes final only after Paystack confirms it to Kompo Nation.</small></p></aside>
+  </section>`;
 
-            <strong>
-              ${
-                money(
-                  line.quantity *
-                  line.product.priceCents
-                )
-              }
-            </strong>
-          </div>
-        `).join("")}
-
-        <div class="summary-line summary-total">
-          <span>Before delivery</span>
-          <strong>${money(subtotal)}</strong>
-        </div>
-
-        <p>
-          <small>
-            Payment is confirmed only by the provider
-            notification—not by the page you return to.
-          </small>
-        </p>
-
-      </aside>
-
-    </section>
-  `;
-
-  document
-    .querySelector("#checkout-form")
-    .addEventListener(
-      "submit",
-      beginCheckout
-    );
+  const form = document.querySelector("#checkout-form");
+  form.querySelectorAll('[name="addressMode"]').forEach((radio) => radio.addEventListener("change", () => {
+    const useNew = form.elements.addressMode.value === "new";
+    const newFields = document.querySelector("#new-address-fields");
+    const savedFields = document.querySelector("#saved-address-fields");
+    if (newFields) newFields.hidden = !useNew;
+    if (savedFields) savedFields.hidden = useNew;
+  }));
+  form.querySelector('[name="saveNewAddress"]')?.addEventListener("change", (e) => {
+    document.querySelector("#checkout-address-label").hidden = !e.target.checked;
+  });
+  form.addEventListener("submit", beginCheckout);
 }
 
 async function beginCheckout(event) {
   event.preventDefault();
-
-  const button =
-    document.querySelector("#checkout-submit");
-
-  const message =
-    document.querySelector("#checkout-message");
-
-  button.disabled = true;
-
-  button.textContent =
-    "Preparing secure checkout…";
-
+  const button = document.querySelector("#checkout-submit");
+  const message = document.querySelector("#checkout-message");
+  button.disabled = true; button.textContent = "Preparing secure checkout…";
   try {
-    const form =
-      Object.fromEntries(
-        new FormData(event.currentTarget)
-      );
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    let address, contact;
 
-    const address = {
-      streetAddress: form.streetAddress,
-      localArea: form.localArea,
-      city: form.city,
-      province: form.province,
-      postalCode: form.postalCode,
-      country: "ZA"
-    };
+    if ((values.addressMode || "new") === "saved") {
+      const saved = (state.checkoutAddresses || []).find((a) => a.id === values.savedAddressId);
+      if (!saved) throw new Error("Choose a saved address.");
+      address = { streetAddress:saved.street_address,localArea:saved.local_area || "",city:saved.city,province:saved.province,postalCode:saved.postal_code,country:saved.country_code || "ZA" };
+      contact = { fullName:saved.recipient_name,phone:saved.phone || state.session.user.user_metadata?.phone || "",email:state.session.user.email };
+      if (!contact.phone) throw new Error("Add a phone number to this saved address.");
+    } else {
+      for (const key of ["fullName","phone","streetAddress","city","province","postalCode"]) if (!String(values[key] || "").trim()) throw new Error("Complete all delivery details.");
+      address = { streetAddress:values.streetAddress.trim(),localArea:String(values.localArea || "").trim(),city:values.city.trim(),province:values.province,postalCode:values.postalCode.trim(),country:"ZA" };
+      contact = { fullName:values.fullName.trim(),phone:values.phone.trim(),email:state.session.user.email };
 
-    const contact = {
-      fullName: form.fullName,
-      phone: form.phone,
-      email: form.email
-    };
-
-    const lines =
-      state.cart.map(({
-        productId,
-        quantity,
-        size,
-        colour
-      }) => ({
-        productId,
-        quantity,
-        size,
-        colour
-      }));
-
-    const headers = {
-      "Content-Type": "application/json",
-      ...(await authHeader())
-    };
-
-    const quoteResponse =
-      await fetch(
-        `${CONFIG.functionsBase}/shipping-quote`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            lines,
-            address,
-            contact
-          })
-        }
-      );
-
-    const quoteData =
-      await quoteResponse.json();
-
-    if (!quoteResponse.ok) {
-      throw new Error(
-        quoteData.error ||
-        "Delivery could not be quoted."
-      );
+      if (values.saveNewAddress === "on") {
+        const label = String(values.addressLabel || "").trim();
+        if (!label) throw new Error("Give the saved address a label.");
+        const { error: saveError } = await supabase.from("addresses").insert({
+          customer_id:state.session.user.id,label,recipient_name:contact.fullName,phone:contact.phone,
+          street_address:address.streetAddress,local_area:address.localArea,city:address.city,
+          province:address.province,postal_code:address.postalCode,country_code:"ZA",
+          is_default:(state.checkoutAddresses || []).length === 0
+        });
+        if (saveError) throw saveError;
+      }
     }
 
-    const checkoutResponse =
-      await fetch(
-        `${CONFIG.functionsBase}/create-checkout`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            lines,
-            address,
-            contact,
-            quotes: quoteData.quotes
-          })
-        }
-      );
+    const lines = state.cart.map(({productId,quantity,size,colour}) => ({productId,quantity,size,colour}));
+    const headers = {"Content-Type":"application/json",...(await authHeader())};
 
-    const checkout =
-      await checkoutResponse.json();
+    const quoteResponse = await fetch(`${CONFIG.functionsBase}/shipping-quote`,{method:"POST",headers,body:JSON.stringify({lines,address,contact})});
+    const quoteData = await quoteResponse.json();
+    if (!quoteResponse.ok) throw new Error(quoteData.error || "Delivery could not be quoted.");
 
-    if (!checkoutResponse.ok) {
-      throw new Error(
-        checkout.error ||
-        "Checkout could not be started."
-      );
-    }
-    if (!checkout.authorizationUrl) {
-      throw new Error("Secure payment link was not returned.");
-    }
-
+    const checkoutResponse = await fetch(`${CONFIG.functionsBase}/create-checkout`,{method:"POST",headers,body:JSON.stringify({lines,address,contact,quotes:quoteData.quotes})});
+    const checkout = await checkoutResponse.json();
+    if (!checkoutResponse.ok) throw new Error(checkout.error || "Checkout could not be started.");
+    if (!checkout.authorizationUrl) throw new Error("Secure payment link was not returned.");
     location.href = checkout.authorizationUrl;
-
   } catch (error) {
-    message.textContent =
-      error.message;
-
-    button.disabled = false;
-
-    button.textContent =
-      "Get delivery and continue";
+    message.textContent = error.message;
+    button.disabled = false; button.textContent = "Get delivery and continue";
   }
 }
 
@@ -2476,43 +2250,41 @@ async function toggleWishlist(productId) {
 }
 
 function changeLine(key, delta) {
-  const [
-    productId,
-    size,
-    colour
-  ] = key.split("|");
+  const [productId, size, colour] = key.split("|");
 
-  const line =
-    state.cart.find(
-      (item) =>
-        item.productId === productId &&
-        item.size === size &&
-        item.colour === colour
+  const line = state.cart.find(
+    (item) =>
+      item.productId === productId &&
+      item.size === size &&
+      item.colour === colour
+  );
+
+  const product = state.products.find(
+    (item) => item.id === productId
+  );
+
+  const variant = product
+    ? selectedVariant(product, size, colour)
+    : null;
+
+  if (!line || !variant) return;
+
+  if (delta > 0 && line.quantity >= Number(variant.stock)) {
+    showToast(
+      `Only ${variant.stock} of this option ${Number(variant.stock) === 1 ? "is" : "are"} available.`
     );
-
-  const product =
-    state.products.find(
-      (item) =>
-        item.id === productId
-    );
-
-  if (!line || !product) {
     return;
   }
 
-  line.quantity =
-    Math.max(
-      1,
-      Math.min(
-        product.stock,
-        line.quantity + delta
-      )
-    );
+  line.quantity = Math.max(
+    1,
+    Math.min(Number(variant.stock), line.quantity + delta)
+  );
 
   saveCommerceState();
-
   renderCart();
 }
+
 
 function setupHeader() {
   document
