@@ -2,13 +2,13 @@
 (() => {
 const CONFIG = Object.freeze({
   siteName: "Kompo Nation",
-  siteUrl: "https://luxury-cendol-e3a1ef.netlify.app",
+  siteUrl: "https://kompo-nation.pages.dev",
   supabaseUrl: "https://vfifwtqbsdaxsikjpvku.supabase.co",
   supabasePublishableKey: "sb_publishable_AaLevppY9LCW1tRIPoEjSw_SGgy_SDQ",
   currency: "ZAR",
   locale: "en-ZA",
   fallbackDeliveryCents: 9900,
-  functionsBase: "/.netlify/functions",
+  functionsBase: "https://vfifwtqbsdaxsikjpvku.supabase.co/functions/v1",
 });
 
 const isSupabaseConfigured = () =>

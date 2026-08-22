@@ -1393,29 +1393,11 @@ async function beginCheckout(event) {
         "Checkout could not be started."
       );
     }
+    if (!checkout.authorizationUrl) {
+      throw new Error("Secure payment link was not returned.");
+    }
 
-    const paymentForm =
-      document.createElement("form");
-
-    paymentForm.method = "post";
-    paymentForm.action = checkout.action;
-
-    Object.entries(
-      checkout.fields
-    ).forEach(([name, value]) => {
-      const input =
-        document.createElement("input");
-
-      input.type = "hidden";
-      input.name = name;
-      input.value = String(value);
-
-      paymentForm.append(input);
-    });
-
-    document.body.append(paymentForm);
-
-    paymentForm.submit();
+    location.href = checkout.authorizationUrl;
 
   } catch (error) {
     message.textContent =
@@ -2395,7 +2377,7 @@ function renderPaymentResult(success) {
       <p>
         ${
           success
-            ? "Your account will show the order as paid only after Kompo Nation receives and verifies PayFast's server notification."
+            ? "Your account will show the order as paid only after Kompo Nation receives and verifies Paystack's payment confirmation."
             : "Your bag is still available when you are ready to try again."
         }
       </p>
