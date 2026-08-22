@@ -872,3 +872,78 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .terminal-product-panel[hidden] {
   display: none !important;
 }
+
+
+/* STEP11B2 STORE TEAM */
+.store-team-box {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(36,43,38,.12);
+  border-radius: 18px;
+  background: rgba(255,255,255,.48);
+}
+
+.store-team-list {
+  display: grid;
+  gap: .65rem;
+}
+
+.store-member-row {
+  display: grid;
+  grid-template-columns: minmax(180px,1.4fr) minmax(120px,.7fr) minmax(120px,.7fr) auto;
+  gap: .75rem;
+  align-items: end;
+  padding: .8rem;
+  border: 1px solid rgba(36,43,38,.1);
+  border-radius: 14px;
+  background: rgba(255,255,255,.68);
+}
+
+.store-member-row p {
+  margin: .18rem 0 0;
+  opacity: .68;
+  font-size: .82rem;
+}
+
+.store-member-row label {
+  display: grid;
+  gap: .3rem;
+  font-size: .78rem;
+}
+
+.store-member-row select,
+.store-team-add input,
+.store-team-add select {
+  width: 100%;
+  padding: .62rem .7rem;
+  border: 1px solid rgba(36,43,38,.16);
+  border-radius: 10px;
+  background: white;
+}
+
+.store-team-add {
+  margin-top: .9rem;
+}
+
+.empty-mini-state,
+.inline-alert {
+  padding: .85rem;
+  border-radius: 12px;
+  background: rgba(255,255,255,.62);
+}
+
+.inline-alert {
+  border: 1px solid rgba(138,45,45,.18);
+}
+
+@media (max-width: 900px) {
+  .store-member-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .store-member-row {
+    grid-template-columns: 1fr;
+  }
+}

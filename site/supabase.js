@@ -47,7 +47,8 @@ async function loadRemoteCatalogue() {
     supabase
       .from("vendors")
       .select("id,slug,business_name,description,short_description,mark,accent,status,sales_count,featured_override,is_platform_owned")
-      .eq("status", "active"),
+      .eq("status", "active")
+      .is("retired_at", null),
     supabase.rpc("get_storefront_products"),
   ]);
 

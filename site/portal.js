@@ -50,11 +50,23 @@ async function authorize() {
     deny("Operator access is not assigned", "This signed-in account can still shop normally, but it does not have an operator role.");
     return false;
   }
-  if (area === "vendor" && !state.isAdmin && !state.vendorIds.length) {
-    deny("Vendor access is not assigned", "This signed-in account can still shop normally, but it does not belong to an active store.");
+  if (area === "vendor" && !state.vendorIds.length) {
+    const adminAction = state.isAdmin
+      ? '<a class="primary-button" href="/admin">Open admin control room</a>'
+      : '<a class="primary-button" href="/">Return to store</a>';
+
+    gate.innerHTML = `<section class="portal-alert glass">
+      <p class="eyebrow">STORE ACCESS</p>
+      <h1>No vendor store is assigned to this account.</h1>
+      <p>${state.isAdmin
+        ? "Your Kompo Nation admin role does not automatically grant vendor-store access. Assign this account to a store from Admin → Stores → Manage → Store team."
+        : "Ask a Kompo Nation administrator to add your account to the correct store."}</p>
+      ${adminAction}
+    </section>`;
+
     return false;
   }
-  const storeQuery = supabase.from("vendors").select("id,business_name,slug,status,commission_rate_bps,is_platform_owned,sales_count,featured_override").order("business_name");
+  const storeQuery = supabase.from("vendors").select("id,business_name,slug,status,commission_rate_bps,is_platform_owned,sales_count,featured_override").order("business_name").is("retired_at", null);
   const { data: stores, error: storeError } = area === "admin"
     ? await storeQuery
     : state.vendorIds.length
@@ -119,11 +131,112 @@ async function renderOverview() {
 /* ========================================================================== */
 /* 04. STORE MANAGEMENT                                                       */
 /* ========================================================================== */
+async function loadStoreTeamPanel(vendorId) {
+  const host = document.querySelector(`#store-team-${CSS.escape(vendorId)}`);
+  if (!host) return;
+
+  host.innerHTML = `<p class="muted-copy">Loading store team…</p>`;
+
+  const { data: members, error } = await supabase.rpc(
+    "admin_list_vendor_members",
+    { p_vendor_id: vendorId }
+  );
+
+  if (error) {
+    host.innerHTML = `<div class="inline-alert">${escapeHtml(error.message)}</div>`;
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="store-team-list">
+      ${(members || []).map((member) => `
+        <article class="store-member-row">
+          <div>
+            <strong>${escapeHtml(member.full_name || member.email)}</strong>
+            <p>${escapeHtml(member.email)}</p>
+          </div>
+
+          <label>
+            Role
+            <select data-member-role="${member.user_id}">
+              <option value="owner" ${member.role === "owner" ? "selected" : ""}>Owner</option>
+              <option value="manager" ${member.role === "manager" ? "selected" : ""}>Manager</option>
+              <option value="catalogue" ${member.role === "catalogue" ? "selected" : ""}>Catalogue</option>
+              <option value="fulfilment" ${member.role === "fulfilment" ? "selected" : ""}>Fulfilment</option>
+            </select>
+          </label>
+
+          <label>
+            Status
+            <select data-member-status="${member.user_id}">
+              <option value="active" ${member.status === "active" ? "selected" : ""}>Active</option>
+              <option value="invited" ${member.status === "invited" ? "selected" : ""}>Invited</option>
+              <option value="suspended" ${member.status === "suspended" ? "selected" : ""}>Suspended</option>
+            </select>
+          </label>
+
+          <div class="terminal-actions">
+            <button
+              class="table-action"
+              type="button"
+              data-save-store-member="${member.user_id}"
+              data-member-vendor="${vendorId}"
+            >Save</button>
+
+            <button
+              class="table-action danger-action"
+              type="button"
+              data-remove-store-member="${member.user_id}"
+              data-member-vendor="${vendorId}"
+            >Remove</button>
+          </div>
+        </article>
+      `).join("") || `
+        <div class="empty-mini-state">
+          <strong>No one is assigned to this store yet.</strong>
+          <p>Add an existing Kompo Nation account below.</p>
+        </div>
+      `}
+    </div>
+
+    <form class="stack-form compact-form store-team-add" data-form="store-member">
+      <input type="hidden" name="vendor_id" value="${vendorId}">
+
+      <div class="form-grid">
+        <label>
+          Account email
+          <input
+            name="email"
+            type="email"
+            required
+            placeholder="person@example.com"
+            autocomplete="off"
+          >
+        </label>
+
+        <label>
+          Role
+          <select name="role">
+            <option value="owner">Owner</option>
+            <option value="manager" selected>Manager</option>
+            <option value="catalogue">Catalogue</option>
+            <option value="fulfilment">Fulfilment</option>
+          </select>
+        </label>
+      </div>
+
+      <button class="primary-button">Add to store</button>
+      <p class="form-message"></p>
+      <small>The person must already have a Kompo Nation account. You only enter their email. No technical account ID is needed.</small>
+    </form>`;
+}
+
 async function renderStores() {
   const { data: stores, error } = await supabase
     .from("vendors")
     .select("id,business_name,slug,status,commission_rate_bps,is_platform_owned,sales_count,featured_override,short_description,description,mark,accent,vendor_private_settings(contact_email)")
-    .order("business_name");
+    .order("business_name")
+    .is("retired_at", null);
 
   if (error) throw error;
   state.stores = stores || [];
@@ -207,6 +320,25 @@ async function renderStores() {
           </label>
 
           <button class="primary-button" type="button" data-save-store="${store.id}">Save store</button>
+          <section class="store-team-box">
+            <div class="panel-heading">
+              <div>
+                <h3>Store team</h3>
+                <p>Choose who can operate this store and what they are responsible for.</p>
+              </div>
+
+              <button
+                class="table-action"
+                type="button"
+                data-load-store-team="${store.id}"
+              >Manage team</button>
+            </div>
+
+            <div id="store-team-${store.id}">
+              <p class="muted-copy">Select “Manage team” to load this store’s members.</p>
+            </div>
+          </section>
+
           <p><small>The public URL is generated automatically when the store is created and stays stable if the business name changes.</small></p>
         </div>
       </section>
@@ -598,6 +730,72 @@ async function handlePortalClick(event) {
     return;
   }
 
+  const loadStoreTeam = event.target.closest("[data-load-store-team]");
+  if (loadStoreTeam) {
+    loadStoreTeam.disabled = true;
+    loadStoreTeam.textContent = "Loading…";
+
+    try {
+      await loadStoreTeamPanel(loadStoreTeam.dataset.loadStoreTeam);
+    } finally {
+      loadStoreTeam.disabled = false;
+      loadStoreTeam.textContent = "Refresh team";
+    }
+
+    return;
+  }
+
+  const saveStoreMember = event.target.closest("[data-save-store-member]");
+  if (saveStoreMember) {
+    const userId = saveStoreMember.dataset.saveStoreMember;
+    const vendorId = saveStoreMember.dataset.memberVendor;
+    const role = document.querySelector(
+      `[data-member-role="${CSS.escape(userId)}"]`
+    ).value;
+    const status = document.querySelector(
+      `[data-member-status="${CSS.escape(userId)}"]`
+    ).value;
+
+    saveStoreMember.disabled = true;
+
+    const { error } = await supabase.rpc("admin_upsert_vendor_member", {
+      p_vendor_id: vendorId,
+      p_user_id: userId,
+      p_role: role,
+      p_status: status,
+    });
+
+    saveStoreMember.disabled = false;
+
+    if (error) return toast(error.message);
+
+    toast("Store member updated.");
+    return loadStoreTeamPanel(vendorId);
+  }
+
+  const removeStoreMember = event.target.closest("[data-remove-store-member]");
+  if (removeStoreMember) {
+    const userId = removeStoreMember.dataset.removeStoreMember;
+    const vendorId = removeStoreMember.dataset.memberVendor;
+
+    if (!confirm("Remove this person from the store team?")) return;
+
+    removeStoreMember.disabled = true;
+
+    const { error } = await supabase.rpc("admin_remove_vendor_member", {
+      p_vendor_id: vendorId,
+      p_user_id: userId,
+    });
+
+    if (error) {
+      removeStoreMember.disabled = false;
+      return toast(error.message);
+    }
+
+    toast("Store member removed.");
+    return loadStoreTeamPanel(vendorId);
+  }
+
   const storeStatus = event.target.closest("[data-store-status]");
   if (storeStatus) {
     const { error } = await supabase.rpc("admin_set_vendor_status", { p_vendor_id: storeStatus.dataset.storeStatus, p_status: storeStatus.dataset.nextStatus });
@@ -750,6 +948,38 @@ async function handlePortalSubmit(event) {
   event.preventDefault();
   const message = form.querySelector(".form-message");
   try {
+    if (form.dataset.form === "store-member") {
+      const values = Object.fromEntries(new FormData(form));
+      const button = form.querySelector('button[type="submit"], button:not([type])');
+
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Adding…";
+      }
+
+      const { data, error } = await supabase.rpc(
+        "admin_assign_vendor_member_by_email",
+        {
+          p_vendor_id: values.vendor_id,
+          p_email: values.email.trim().toLowerCase(),
+          p_role: values.role,
+          p_status: "active",
+        }
+      );
+
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Add to store";
+      }
+
+      if (error) throw error;
+
+      toast(`${data?.email || values.email} added to the store.`);
+      form.reset();
+      await loadStoreTeamPanel(values.vendor_id);
+      return;
+    }
+
     if (form.dataset.form === "store") await createStore(form);
     if (form.dataset.form === "product") await createProduct(form);
     if (form.dataset.form === "vendor-settings") {
@@ -775,7 +1005,19 @@ async function handlePortalSubmit(event) {
   } catch (error) { message.textContent = error.message; }
 }
 
+function renderNoVendorStore() {
+  content.innerHTML = `<section class="portal-alert glass">
+    <p class="eyebrow">STORE ACCESS</p>
+    <h1>No vendor store is assigned.</h1>
+    <p>This account needs an active Store Team membership before vendor tools can be used.</p>
+    ${state.isAdmin
+      ? '<a class="primary-button" href="/admin">Open admin control room</a>'
+      : '<a class="primary-button" href="/">Return to storefront</a>'}
+  </section>`;
+}
+
 async function renderView() {
+  if (area === "vendor" && !state.currentVendorId) return renderNoVendorStore();
   if (state.view === "overview") return renderOverview();
   if (state.view === "stores") return renderStores();
   if (state.view === "products") return renderProducts();
