@@ -1,0 +1,35 @@
+# Nested assets for dynamic product routes
+/product/styles.css        /styles.css                     200
+/product/config.js         /config.js                      200
+/product/catalog.js        /catalog.js                     200
+/product/supabase.js       /supabase.js                    200
+/product/app.js            /app.js                         200
+/product/assets/*          /assets/:splat                  200
+
+# Nested assets for dynamic store routes
+/store/styles.css          /styles.css                     200
+/store/config.js           /config.js                      200
+/store/catalog.js          /catalog.js                     200
+/store/supabase.js         /supabase.js                    200
+/store/app.js              /app.js                         200
+/store/assets/*            /assets/:splat                  200
+
+# Storefront SPA routes
+/shop                      /index.html                     200
+/stores                    /index.html                     200
+/cart                      /index.html                     200
+/checkout                  /index.html                     200
+/wishlist                  /index.html                     200
+/account                   /index.html                     200
+/about                     /index.html                     200
+/delivery                  /index.html                     200
+/returns                   /index.html                     200
+/contact                   /index.html                     200
+/privacy                   /index.html                     200
+/terms                     /index.html                     200
+/payment-success           /index.html                     200
+/payment-cancelled         /index.html                     200
+
+# Dynamic storefront routes
+/product/*                  /index.html                     200
+/store/*                    /index.html                     200

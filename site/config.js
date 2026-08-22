@@ -2,7 +2,7 @@
 (() => {
 const CONFIG = Object.freeze({
   siteName: "Kompo Nation",
-  siteUrl: "siteUrl: "https://kompo-nation.pages.dev",",
+  siteUrl: "https://luxury-cendol-e3a1ef.netlify.app",
   supabaseUrl: "https://vfifwtqbsdaxsikjpvku.supabase.co",
   supabasePublishableKey: "sb_publishable_AaLevppY9LCW1tRIPoEjSw_SGgy_SDQ",
   currency: "ZAR",
