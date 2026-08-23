@@ -487,7 +487,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 
 /* =========================================================
-   CUSTOMER ACCOUNT — SAVED ADDRESS CARDS
+   CUSTOMER ACCOUNT â€” SAVED ADDRESS CARDS
    ========================================================= */
 
 .account-panel .order-card {
@@ -605,7 +605,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 
 /* =========================================================
-   MOBILE HEADER — KEEP DESKTOP FEATURES AVAILABLE
+   MOBILE HEADER â€” KEEP DESKTOP FEATURES AVAILABLE
    ========================================================= */
 
 /*
@@ -840,5 +840,124 @@ button, a { -webkit-tap-highlight-color: transparent; }
     padding-left: 0.5rem;
     padding-right: 0.42rem;
     font-size: 0.67rem;
+  }
+}
+
+/* KOMPO MOBILE HERO V3 */
+
+.mobile-hero-marquee {
+  display: none;
+}
+
+@keyframes kompoMarquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 600px) {
+
+  .hero-card {
+    min-height: 0;
+    padding: 0;
+    display: block;
+    overflow: hidden;
+    background: #111412;
+  }
+
+  .mobile-hero-marquee {
+    position: relative;
+    z-index: 5;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    padding: .6rem 0;
+    background: #111;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    white-space: nowrap;
+  }
+
+  .mobile-hero-marquee-track {
+    display: flex;
+    width: max-content;
+    animation: kompoMarquee 18s linear infinite;
+  }
+
+  .mobile-hero-marquee span {
+    flex: none;
+    padding-right: .7rem;
+    color: rgba(255,255,255,.82);
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .17em;
+  }
+
+  .hero-card::after {
+    display: none;
+  }
+
+  .hero-image {
+    position: relative;
+    inset: auto;
+    z-index: 0;
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    object-position: center;
+    transform: none;
+    animation: none;
+    filter:
+      saturate(.42)
+      brightness(.63)
+      contrast(.95);
+  }
+
+  .hero-copy {
+    position: relative;
+    z-index: 2;
+    max-width: none;
+    padding: 1.6rem 1.45rem 1.7rem;
+    background:
+      linear-gradient(
+        180deg,
+        #111412 0%,
+        #171b18 100%
+      );
+  }
+
+  .hero-copy .eyebrow {
+    margin-bottom: .7rem;
+  }
+
+  .hero-copy h1 {
+    margin-bottom: .9rem;
+    font-size: clamp(2.8rem, 15vw, 4.2rem);
+    line-height: .92;
+  }
+
+  .hero-copy p {
+    margin-bottom: 1.4rem;
+    font-size: .96rem;
+    line-height: 1.55;
+  }
+
+  .hero-actions {
+    gap: .65rem;
+  }
+
+  .hero-actions a {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-hero-marquee-track {
+    animation: none;
   }
 }
