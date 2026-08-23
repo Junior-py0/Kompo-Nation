@@ -291,15 +291,9 @@ function renderHome() {
   app.innerHTML = `
     <section class="hero">
       <div class="hero-card">
-        <div class="mobile-hero-marquee" aria-hidden="true">
-          <div class="mobile-hero-marquee-track">
-            <span>KOMPO NATION • WEAR THE MOVEMENT • LIMPOPO TO THE NATION • INDEPENDENT CULTURE • </span>
-            <span>KOMPO NATION • WEAR THE MOVEMENT • LIMPOPO TO THE NATION • INDEPENDENT CULTURE • </span>
-          </div>
-        </div>
         <img
           class="hero-image"
-          src="${assetPath("/assets/campaign-v3.png")}"
+          src="${assetPath("/assets/campaign-crew-v4.png")}"
           alt="Kompo Nation fashion campaign"
         >
 
