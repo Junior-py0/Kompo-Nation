@@ -95,7 +95,7 @@ const publicReference = (value) =>
   escapeHtml(value || "Pending reference");
 
 function setMeta(title, description) {
-  document.title = `${title} â€” Kompo Nation`;
+  document.title = `${title} — Kompo Nation`;
 
   const tag = document.querySelector(
     'meta[name="description"]'
@@ -189,7 +189,7 @@ function productVisual(product, large = false) {
               data-wish="${product.id}"
               aria-label="Save ${escapeHtml(product.name)}"
             >
-              â™¡
+              ♡
             </button>
           `
       }
@@ -209,7 +209,7 @@ function productCard(product) {
       <div class="product-info">
         <small>
           ${escapeHtml(store?.name || "Kompo Nation")}
-          Â·
+          ·
           ${escapeHtml(product.category)}
         </small>
 
@@ -266,7 +266,7 @@ const productGrid = (products) =>
     `
     : `
       <section class="empty-state glass">
-        <span>â—‡</span>
+        <span>◇</span>
         <h2>Nothing is sitting here yet.</h2>
         <p>Return soon for the next release.</p>
       </section>
@@ -375,7 +375,7 @@ function renderHome() {
           class="section-link"
           href="/stores"
         >
-          Explore every store â†’
+          Explore every store →
         </a>
       </div>
 
@@ -404,7 +404,7 @@ function renderHome() {
           class="section-link"
           href="/shop"
         >
-          Shop everything â†’
+          Shop everything →
         </a>
       </div>
 
@@ -424,7 +424,7 @@ function renderHome() {
         <p>
           Kompo Nation gives artist-led labels a place
           to reach fans beyond event queues and
-          provincial bordersâ€”without losing the identity
+          provincial borders—without losing the identity
           that made the movement matter.
         </p>
 
@@ -432,7 +432,7 @@ function renderHome() {
           class="section-link"
           href="/about"
         >
-          Read our story â†’
+          Read our story →
         </a>
       </div>
 
@@ -637,7 +637,7 @@ function renderProduct() {
       <div class="product-detail-copy glass">
         <p class="eyebrow">
           ${escapeHtml(store?.name || "KOMPO NATION")}
-          Â·
+          ·
           ${escapeHtml(product.category)}
         </p>
 
@@ -700,7 +700,7 @@ function renderProduct() {
               class="primary-button"
               type="submit"
             >
-              Add to bag Â· ${money(product.priceCents)}
+              Add to bag · ${money(product.priceCents)}
             </button>
 
             <button
@@ -711,7 +711,7 @@ function renderProduct() {
               ${
                 state.wishlist.includes(product.id)
                   ? "Saved"
-                  : "â™¡"
+                  : "♡"
               }
             </button>
           </div>
@@ -720,7 +720,7 @@ function renderProduct() {
         <p>
           <small>
             ${product.stock}
-            currently available online Â·
+            currently available online ·
             SKU ${escapeHtml(product.sku)}
           </small>
         </p>
@@ -834,7 +834,7 @@ function renderInformation(type) {
     </section>
 
     <section class="content-section empty-state glass">
-      <span>â—‡</span>
+      <span>◇</span>
 
       <h2>
         Clear details, before launch.
@@ -926,7 +926,7 @@ function renderCart() {
   if (!rows.length) {
     app.innerHTML = `
       <section class="empty-state glass">
-        <span>â—‡</span>
+        <span>◇</span>
 
         <h1>Your bag is open.</h1>
 
@@ -995,9 +995,9 @@ function renderCart() {
 
               <p>
                 ${escapeHtml(storeFor(line.product)?.name)}
-                Â·
+                ·
                 ${escapeHtml(line.size)}
-                Â·
+                ·
                 ${escapeHtml(line.colour)}
               </p>
 
@@ -1006,7 +1006,7 @@ function renderCart() {
                   data-quantity="-1"
                   data-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
                 >
-                  âˆ’
+                  −
                 </button>
 
                 <span>
@@ -1252,7 +1252,7 @@ async function renderCheckout() {
           <div class="summary-line">
             <span>
               ${line.quantity}
-              Ã—
+              ×
               ${escapeHtml(line.product.name)}
             </span>
 
@@ -1275,7 +1275,7 @@ async function renderCheckout() {
         <p>
           <small>
             Payment is confirmed only by the provider
-            notificationâ€”not by the page you return to.
+            notification—not by the page you return to.
           </small>
         </p>
 
@@ -1304,7 +1304,7 @@ async function beginCheckout(event) {
   button.disabled = true;
 
   button.textContent =
-    "Preparing secure checkoutâ€¦";
+    "Preparing secure checkout…";
 
   try {
     const form =
@@ -1625,12 +1625,12 @@ async function renderAccountView(
 
                     <p>
                       ${escapeHtml(vendor?.business_name || "Store")}
-                      Â·
+                      ·
                       ${
                         new Date(order.created_at)
                           .toLocaleDateString(CONFIG.locale)
                       }
-                      Â·
+                      ·
                       ${
                         money(
                           Number(order.merchandise_total_cents) +
@@ -1915,7 +1915,7 @@ async function renderAccountView(
                         item.reason.replaceAll("_", " ")
                       )
                     }
-                    Â·
+                    ·
                     ${money(item.refund_amount_cents)}
                   </p>
                 </div>
@@ -2363,7 +2363,7 @@ function renderPaymentResult(success) {
   app.innerHTML = `
     <section class="empty-state glass">
       <span>
-        ${success ? "âœ“" : "â—‡"}
+        ${success ? "✓" : "◇"}
       </span>
 
       <h1>
@@ -2471,7 +2471,7 @@ async function toggleWishlist(productId) {
       button.textContent =
         state.wishlist.includes(productId)
           ? "Saved"
-          : "â™¡";
+          : "♡";
     });
 }
 
