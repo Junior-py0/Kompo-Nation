@@ -1,13 +1,2 @@
-/*
-  X-Content-Type-Options: nosniff
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-
-/admin*
-  X-Robots-Tag: noindex, nofollow
-
-/vendor*
-  X-Robots-Tag: noindex, nofollow
-
-/login*
-  X-Robots-Tag: noindex, nofollow
+﻿/*
+  Cache-Control: no-cache, no-store, must-revalidate
