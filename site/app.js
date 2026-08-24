@@ -2319,9 +2319,14 @@ async function renderAccountView(
                     ${escapeHtml(address.recipient_name)}
                     <br>
 
-                    ${escapeHtml(address.street_address)},
-                    ${escapeHtml(address.city)},
-                    ${escapeHtml(address.postal_code)}
+                    ${escapeHtml(address.street_address)},<br>
+                ${
+                  address.local_area
+                    ? `${escapeHtml(address.local_area)}, `
+                    : ""
+                }
+                ${escapeHtml(address.city)},
+                ${escapeHtml(address.postal_code)}
                   </p>
 
                   <div class="line-controls">
@@ -2408,6 +2413,17 @@ async function renderAccountView(
             required
           >
         </label>
+
+        <!-- CUSTOMER_ADDRESS_LOCAL_AREA_V1 -->
+        <label>
+          Area / suburb
+          <input
+            name="local_area"
+            autocomplete="address-level3"
+            required
+          >
+        </label>
+
 
         <div class="form-grid">
 
@@ -2591,6 +2607,7 @@ async function handleAccountAction(event) {
     form.elements.street_address.value =
       address.street_address || "";
 
+        form.elements.local_area.value = address.local_area || "";
     form.elements.city.value =
       address.city || "";
 
@@ -2835,8 +2852,8 @@ async function saveAddress(event) {
           recipient_name:
             values.recipient_name.trim(),
 
-          street_address:
-            values.street_address.trim(),
+          street_address: values.street_address.trim(),
+        local_area: values.local_area.trim(),
 
           city:
             values.city.trim(),
@@ -2878,8 +2895,8 @@ async function saveAddress(event) {
           recipient_name:
             values.recipient_name.trim(),
 
-          street_address:
-            values.street_address.trim(),
+          street_address: values.street_address.trim(),
+        local_area: values.local_area.trim(),
 
           city:
             values.city.trim(),
