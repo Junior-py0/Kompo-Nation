@@ -662,10 +662,404 @@ async function createProduct(form) {
 }/* 06. ORDER AND RETURN MANAGEMENT                                            */
 /* ========================================================================== */
 async function renderOrders() {
-  const query = supabase.from("vendor_orders").select("id,public_reference,vendor_id,fulfilment_status,merchandise_total_cents,shipping_charge_cents,commission_total_cents,created_at,orders(customer_name,customer_email),vendors(business_name)").order("created_at", { ascending: false }).limit(150);
-  const { data: orders, error } = area === "vendor" ? await query.eq("vendor_id", state.currentVendorId) : await query;
+  const query = supabase
+    .from("vendor_orders")
+    .select(
+      "id,public_reference,vendor_id,fulfilment_status,merchandise_total_cents,shipping_charge_cents,shipping_quote,commission_total_cents,created_at,orders(customer_name,customer_email),vendors(business_name)"
+    )
+    .order("created_at", {
+      ascending: false
+    })
+    .limit(150);
+
+  const {
+    data: orders,
+    error
+  } =
+    area === "vendor"
+      ? await query.eq(
+          "vendor_id",
+          state.currentVendorId
+        )
+      : await query;
+
   if (error) throw error;
-  content.innerHTML = `${header("FULFILMENT", "Orders", "Each store package moves independently after one customer checkout.")}<section class="dashboard-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>Package</th><th>Store</th><th>Customer</th><th>Value</th><th>Commission</th><th>Status</th><th>Move</th></tr></thead><tbody>${orders.map((order) => { const vendor = Array.isArray(order.vendors) ? order.vendors[0] : order.vendors; const parent = Array.isArray(order.orders) ? order.orders[0] : order.orders; const next = ({ new: "accepted", accepted: "packing", packing: "packed", packed: "ready_for_collection" })[order.fulfilment_status]; const action = next ? `<button class="table-action" data-order-status="${order.id}" data-next-status="${next}">Mark ${escapeHtml(next.replaceAll("_", " "))}</button>` : order.fulfilment_status === "ready_for_collection" ? `<button class="table-action" data-book-shipment="${order.id}">Book collection</button>` : "—"; return `<tr><td><strong>${escapeHtml(order.public_reference)}</strong><br><small>${new Date(order.created_at).toLocaleDateString(CONFIG.locale)}</small></td><td>${escapeHtml(vendor?.business_name)}</td><td>${escapeHtml(parent?.customer_name)}<br><small>${escapeHtml(parent?.customer_email)}</small></td><td>${money(Number(order.merchandise_total_cents) + Number(order.shipping_charge_cents))}</td><td>${money(order.commission_total_cents)}</td><td><span class="status-pill">${escapeHtml(order.fulfilment_status.replaceAll("_", " "))}</span></td><td>${action}</td></tr>`; }).join("")}</tbody></table></div></section>`;
+
+  const orderRows = (orders || [])
+    .map((order) => {
+
+      const vendor =
+        Array.isArray(order.vendors)
+          ? order.vendors[0]
+          : order.vendors;
+
+      const parent =
+        Array.isArray(order.orders)
+          ? order.orders[0]
+          : order.orders;
+
+      const next = ({
+        new: "accepted",
+        accepted: "packing",
+        packing: "packed",
+        packed: "ready_for_collection"
+      })[order.fulfilment_status];
+
+      let action = "—";
+
+      if (next) {
+        action = `
+          <button
+            class="table-action"
+            data-order-status="${order.id}"
+            data-next-status="${next}"
+          >
+            ${
+              next === "ready_for_collection"
+                ? "Parcel is ready"
+                : `Mark ${escapeHtml(
+                    next.replaceAll("_", " ")
+                  )}`
+            }
+          </button>
+        `;
+      } else if (
+        order.fulfilment_status ===
+        "ready_for_collection"
+      ) {
+        action = `
+          <button
+            class="table-action"
+            data-book-shipment="${order.id}"
+          >
+            Book courier collection
+          </button>
+        `;
+      }
+
+      return `
+        <tr>
+
+          <td>
+            <strong>
+              ${escapeHtml(order.public_reference)}
+            </strong>
+            <br>
+            <small>
+              ${
+                new Date(
+                  order.created_at
+                ).toLocaleDateString(
+                  CONFIG.locale
+                )
+              }
+            </small>
+          </td>
+
+          <td>
+            ${escapeHtml(
+              vendor?.business_name
+            )}
+          </td>
+
+          <td>
+            ${escapeHtml(
+              parent?.customer_name
+            )}
+            <br>
+            <small>
+              ${escapeHtml(
+                parent?.customer_email
+              )}
+            </small>
+          </td>
+
+          <td>
+            ${
+              money(
+                Number(
+                  order.merchandise_total_cents
+                ) +
+                Number(
+                  order.shipping_charge_cents
+                )
+              )
+            }
+          </td>
+
+          <td>
+            ${
+              money(
+                order.commission_total_cents
+              )
+            }
+          </td>
+
+          <td>
+            <span class="status-pill">
+              ${
+                escapeHtml(
+                  order.fulfilment_status
+                    .replaceAll("_", " ")
+                )
+              }
+            </span>
+          </td>
+
+          <td>
+            ${action}
+          </td>
+
+        </tr>
+      `;
+    })
+    .join("");
+
+  content.innerHTML = `
+    ${
+      header(
+        "FULFILMENT",
+        "Orders",
+        "Prepare each store package, mark it ready only when it is physically available for collection, then create the courier booking."
+      )
+    }
+
+    <section class="dashboard-panel">
+
+      <div class="table-scroll">
+
+        <table class="data-table">
+
+          <thead>
+            <tr>
+              <th>Package</th>
+              <th>Store</th>
+              <th>Customer</th>
+              <th>Value</th>
+              <th>Commission</th>
+              <th>Status</th>
+              <th>Move</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${orderRows}
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </section>
+  `;
+
+
+  // COLLECTION_SCHEDULE_UI_V1
+  if (area === "vendor") {
+
+    const collectionOrders =
+      (orders || []).filter(
+        (order) =>
+          [
+            "packed",
+            "ready_for_collection",
+            "booked"
+          ].includes(
+            order.fulfilment_status
+          )
+      );
+
+    if (collectionOrders.length) {
+
+      const collectionCards =
+        collectionOrders
+          .map((order) => {
+
+            const quote =
+              order.shipping_quote || {};
+
+            const courierName =
+              quote.courierName ||
+              "Selected courier";
+
+            const serviceName =
+              quote.serviceName ||
+              "Door-to-door delivery";
+
+            const cutoffRaw =
+              String(
+                quote.collectionCutoffTime ||
+                ""
+              );
+
+            const cutoff =
+              cutoffRaw
+                ? cutoffRaw.slice(0, 5)
+                : "";
+
+            let explanation = "";
+            let action = "";
+
+            if (
+              order.fulfilment_status ===
+              "packed"
+            ) {
+
+              explanation =
+                "This parcel is packed, but no courier has been booked. Press the button only once the sealed parcel is physically ready at your collection address.";
+
+              action = `
+                <button
+                  class="primary-button"
+                  data-order-status="${order.id}"
+                  data-next-status="ready_for_collection"
+                >
+                  Parcel is ready for collection
+                </button>
+              `;
+
+            } else if (
+              order.fulfilment_status ===
+              "ready_for_collection"
+            ) {
+
+              explanation =
+                "Kompo Nation now knows the parcel is ready. Bob Go has still not been asked to collect it. Booking happens only when you press the button below.";
+
+              action = `
+                <button
+                  class="primary-button"
+                  data-book-shipment="${order.id}"
+                >
+                  Book courier collection
+                </button>
+              `;
+
+            } else {
+
+              explanation =
+                "The courier booking has been created. Keep the sealed parcel available at the saved collection address and follow the courier tracking updates.";
+
+              action = `
+                <span class="status-pill">
+                  Courier booked
+                </span>
+              `;
+            }
+
+            return `
+              <article
+                class="collection-schedule-card"
+              >
+
+                <div
+                  class="collection-schedule-heading"
+                >
+
+                  <div>
+                    <small>PACKAGE</small>
+
+                    <h3>
+                      ${
+                        escapeHtml(
+                          order.public_reference
+                        )
+                      }
+                    </h3>
+                  </div>
+
+                  <span class="status-pill">
+                    ${
+                      escapeHtml(
+                        order.fulfilment_status
+                          .replaceAll("_", " ")
+                      )
+                    }
+                  </span>
+
+                </div>
+
+                <div
+                  class="collection-courier-name"
+                >
+                  <strong>
+                    ${escapeHtml(courierName)}
+                  </strong>
+
+                  <span>
+                    ${escapeHtml(serviceName)}
+                  </span>
+                </div>
+
+                ${
+                  cutoff
+                    ? `
+                      <p class="collection-cutoff">
+                        Collection request cut-off:
+                        <strong>
+                          ${escapeHtml(cutoff)}
+                        </strong>
+                        <br>
+                        Requests made after the courier's service cut-off may move to the next business day.
+                      </p>
+                    `
+                    : `
+                      <p class="collection-cutoff">
+                        The final collection schedule is confirmed when the courier booking is created.
+                      </p>
+                    `
+                }
+
+                <p>
+                  ${escapeHtml(explanation)}
+                </p>
+
+                <div
+                  class="collection-schedule-action"
+                >
+                  ${action}
+                </div>
+
+              </article>
+            `;
+          })
+          .join("");
+
+      content.insertAdjacentHTML(
+        "beforeend",
+        `
+          <section
+            class="dashboard-panel collection-control-panel"
+          >
+
+            <div
+              class="terminal-section-heading"
+            >
+
+              <div>
+                <h2>
+                  Courier collection
+                </h2>
+
+                <p>
+                  Packing, readiness and courier booking are separate steps.
+                  Marking a parcel ready does not contact Bob Go.
+                </p>
+              </div>
+
+            </div>
+
+            <div
+              class="collection-schedule-grid"
+            >
+              ${collectionCards}
+            </div>
+
+          </section>
+        `
+      );
+    }
+  }
 }
 
 async function renderReturns() {

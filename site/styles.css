@@ -1057,3 +1057,150 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .package-settings-card{margin-top:.35rem;padding:1rem;border:1px solid rgba(36,43,38,.12);border-radius:18px;background:rgba(255,255,255,.5)}.package-dim-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem}.package-secondary-grid{align-items:end}.package-preview{margin-top:.85rem;padding:.8rem 1rem;border-radius:12px;background:rgba(36,43,38,.06);font-weight:700}
 @media(max-width:1100px){.terminal-workspace{grid-template-columns:1fr}.inventory-row{grid-template-columns:minmax(150px,1.2fr) 110px 90px 90px}.inventory-actions{grid-column:1/-1;justify-content:flex-start}.variant-create-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.weight-unit-row,.package-dim-grid,.variant-create-grid{grid-template-columns:1fr}.inventory-row{grid-template-columns:1fr 1fr}.inventory-identity,.inventory-actions{grid-column:1/-1}.terminal-product-card{padding:.85rem}.product-control-card{padding:.8rem}}
+
+/* CHECKOUT_REVIEW_AND_COLLECTION_V1 */
+
+.checkout-review-divider {
+  height: 1px;
+  margin: 1rem 0 .7rem;
+  background: rgba(36, 43, 38, .10);
+}
+
+.delivery-breakdown-muted {
+  color: rgba(36, 43, 38, .52);
+  font-size: .92rem;
+}
+
+.delivery-breakdown-muted span:last-child {
+  font-weight: 500;
+}
+
+.delivery-total-row {
+  margin-top: .45rem;
+  padding-top: .8rem;
+  border-top: 1px solid rgba(36, 43, 38, .10);
+  font-weight: 700;
+}
+
+.checkout-total-due {
+  margin-top: .45rem;
+  padding-top: .95rem;
+  border-top: 1px solid rgba(36, 43, 38, .18);
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.checkout-courier-list {
+  display: grid;
+  gap: .55rem;
+  margin: 1rem 0;
+}
+
+.checkout-courier-service {
+  display: grid;
+  gap: .18rem;
+  padding: .75rem .85rem;
+  border: 1px solid rgba(36, 43, 38, .08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .46);
+}
+
+.checkout-courier-service small {
+  opacity: .62;
+  line-height: 1.45;
+}
+
+.checkout-payment-button,
+.checkout-change-button {
+  width: 100%;
+}
+
+.checkout-payment-button {
+  margin-top: .45rem;
+}
+
+.checkout-change-button {
+  margin-top: .55rem;
+}
+
+.checkout-review-note {
+  margin-top: .85rem;
+  opacity: .60;
+  line-height: 1.45;
+}
+
+.collection-control-panel {
+  margin-top: 1rem;
+}
+
+.collection-schedule-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(280px, 1fr));
+  gap: .9rem;
+}
+
+.collection-schedule-card {
+  padding: 1rem;
+  border: 1px solid rgba(36, 43, 38, .10);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .50);
+}
+
+.collection-schedule-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .8rem;
+}
+
+.collection-schedule-heading h3 {
+  margin: .12rem 0 0;
+}
+
+.collection-schedule-heading small {
+  opacity: .52;
+}
+
+.collection-courier-name {
+  display: grid;
+  gap: .15rem;
+  margin-top: .9rem;
+}
+
+.collection-courier-name span {
+  font-size: .88rem;
+  opacity: .66;
+}
+
+.collection-cutoff {
+  margin: .8rem 0;
+  padding: .7rem .8rem;
+  border-radius: 12px;
+  background: rgba(36, 43, 38, .045);
+  font-size: .84rem;
+  line-height: 1.5;
+}
+
+.collection-schedule-card > p {
+  opacity: .74;
+  line-height: 1.5;
+}
+
+.collection-schedule-action {
+  margin-top: .9rem;
+}
+
+.collection-schedule-action .primary-button {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .collection-schedule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .collection-schedule-heading {
+    flex-direction: column;
+  }
+}

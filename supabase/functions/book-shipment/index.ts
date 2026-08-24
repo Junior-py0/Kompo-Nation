@@ -123,12 +123,11 @@ Deno.serve(async (request: Request) => {
 
     if (
       !order ||
-      !["packed", "ready_for_collection"]
-        .includes(order.fulfilment_status)
+      order.fulfilment_status !== "ready_for_collection"
     ) {
       return json(request, 409, {
         error:
-          "Package must be packed before collection can be booked.",
+          "Mark the parcel ready for collection before booking the courier.",
       });
     }
 

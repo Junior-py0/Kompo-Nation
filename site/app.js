@@ -1079,112 +1079,934 @@ function renderCart() {
 }
 
 
-async function renderCheckout() {
-  if (!state.session) { location.href = loginPath("/checkout"); return; }
-  const rows = cartRows();
-  if (!rows.length) return renderCart();
+// CHECKOUT_REVIEW_FLOW_V1
+let pendingCheckoutReview = null;
 
-  const subtotal = rows.reduce((sum,line) => sum + line.unitPriceCents * line.quantity, 0);
-  const { data: addresses, error } = await supabase.from("addresses").select("*").order("is_default",{ascending:false}).order("created_at");
+async function renderCheckout() {
+  pendingCheckoutReview = null;
+
+  if (!state.session) {
+    location.href = loginPath("/checkout");
+    return;
+  }
+
+  const rows = cartRows();
+
+  if (!rows.length) {
+    return renderCart();
+  }
+
+  const subtotal = rows.reduce(
+    (sum, line) =>
+      sum + Number(line.unitPriceCents) * Number(line.quantity),
+    0
+  );
+
+  const { data: addresses, error } = await supabase
+    .from("addresses")
+    .select("*")
+    .order("is_default", { ascending: false })
+    .order("created_at");
+
   if (error) throw error;
+
   state.checkoutAddresses = addresses || [];
 
-  const profileName = state.session.user.user_metadata?.full_name || "";
-  const phone = state.session.user.user_metadata?.phone || "";
-  const hasSaved = state.checkoutAddresses.length > 0;
+  const profileName =
+    state.session.user.user_metadata?.full_name || "";
 
-  app.innerHTML = `<section class="commerce-layout"><div class="commerce-main glass">
-    <p class="eyebrow">SECURE CHECKOUT</p><h1>Where is it going?</h1>
-    <form id="checkout-form" class="stack-form">
-      <div class="checkout-address-choice">
-        ${hasSaved ? `<label class="choice-card"><input type="radio" name="addressMode" value="saved" checked><span><strong>Saved address</strong><small>Use one already on your account.</small></span></label>` : ""}
-        <label class="choice-card"><input type="radio" name="addressMode" value="new" ${hasSaved ? "" : "checked"}><span><strong>New address</strong><small>Enter another delivery address.</small></span></label>
+  const phone =
+    state.session.user.user_metadata?.phone || "";
+
+  const hasSaved =
+    state.checkoutAddresses.length > 0;
+
+  app.innerHTML = `
+    <section class="commerce-layout">
+
+      <div class="commerce-main glass">
+
+        <p class="eyebrow">SECURE CHECKOUT</p>
+        <h1>Where is it going?</h1>
+
+        <form
+          id="checkout-form"
+          class="stack-form"
+        >
+
+          <div class="checkout-address-choice">
+
+            ${
+              hasSaved
+                ? `
+                  <label class="choice-card">
+                    <input
+                      type="radio"
+                      name="addressMode"
+                      value="saved"
+                      checked
+                    >
+                    <span>
+                      <strong>Saved address</strong>
+                      <small>
+                        Use one already on your account.
+                      </small>
+                    </span>
+                  </label>
+                `
+                : ""
+            }
+
+            <label class="choice-card">
+              <input
+                type="radio"
+                name="addressMode"
+                value="new"
+                ${hasSaved ? "" : "checked"}
+              >
+              <span>
+                <strong>New address</strong>
+                <small>
+                  Enter another delivery address.
+                </small>
+              </span>
+            </label>
+
+          </div>
+
+          ${
+            hasSaved
+              ? `
+                <div id="saved-address-fields">
+                  <label>
+                    Deliver to
+
+                    <select name="savedAddressId">
+                      ${
+                        state.checkoutAddresses
+                          .map(
+                            (address) => `
+                              <option value="${address.id}">
+                                ${escapeHtml(address.label)}
+                                —
+                                ${escapeHtml(address.street_address)},
+                                ${escapeHtml(address.city)}
+                              </option>
+                            `
+                          )
+                          .join("")
+                      }
+                    </select>
+                  </label>
+                </div>
+              `
+              : ""
+          }
+
+          <div
+            id="new-address-fields"
+            ${hasSaved ? "hidden" : ""}
+          >
+
+            <div class="form-grid">
+
+              <label>
+                Full name
+                <input
+                  name="fullName"
+                  value="${escapeHtml(profileName)}"
+                >
+              </label>
+
+              <label>
+                Phone
+                <input
+                  name="phone"
+                  value="${escapeHtml(phone)}"
+                >
+              </label>
+
+            </div>
+
+            <label>
+              Email
+              <input
+                name="email"
+                type="email"
+                value="${escapeHtml(state.session.user.email)}"
+                readonly
+              >
+            </label>
+
+            <label>
+              Street address
+              <input
+                name="streetAddress"
+                autocomplete="street-address"
+              >
+            </label>
+
+            <div class="form-grid">
+
+              <label>
+                Area or suburb
+                <input
+                  name="localArea"
+                  autocomplete="address-level3"
+                >
+              </label>
+
+              <label>
+                City
+                <input
+                  name="city"
+                  autocomplete="address-level2"
+                >
+              </label>
+
+            </div>
+
+            <div class="form-grid">
+
+              <label>
+                Province
+                <select name="province">
+                  <option>Limpopo</option>
+                  <option>Gauteng</option>
+                  <option>Mpumalanga</option>
+                  <option>North West</option>
+                  <option>KwaZulu-Natal</option>
+                  <option>Free State</option>
+                  <option>Northern Cape</option>
+                  <option>Eastern Cape</option>
+                  <option>Western Cape</option>
+                </select>
+              </label>
+
+              <label>
+                Postal code
+                <input
+                  name="postalCode"
+                  inputmode="numeric"
+                >
+              </label>
+
+            </div>
+
+            <label class="switch-line">
+              <input
+                type="checkbox"
+                name="saveNewAddress"
+              >
+              Save this address
+            </label>
+
+            <label
+              id="checkout-address-label"
+              hidden
+            >
+              Address label
+              <input
+                name="addressLabel"
+                placeholder="Home, Work, Campus"
+              >
+            </label>
+
+          </div>
+
+          <button
+            class="primary-button"
+            id="checkout-submit"
+            type="submit"
+          >
+            Get delivery quote
+          </button>
+
+          <p
+            class="form-message"
+            id="checkout-message"
+            aria-live="polite"
+          ></p>
+
+        </form>
+
       </div>
 
-      ${hasSaved ? `<div id="saved-address-fields"><label>Deliver to<select name="savedAddressId">${state.checkoutAddresses.map((a) => `<option value="${a.id}">${escapeHtml(a.label)} — ${escapeHtml(a.street_address)}, ${escapeHtml(a.city)}</option>`).join("")}</select></label></div>` : ""}
+      <aside
+        class="order-summary glass"
+        id="checkout-summary"
+      >
 
-      <div id="new-address-fields" ${hasSaved ? "hidden" : ""}>
-        <div class="form-grid"><label>Full name<input name="fullName" value="${escapeHtml(profileName)}"></label><label>Phone<input name="phone" value="${escapeHtml(phone)}"></label></div>
-        <label>Email<input name="email" type="email" value="${escapeHtml(state.session.user.email)}" readonly></label>
-        <label>Street address<input name="streetAddress"></label>
-        <div class="form-grid"><label>Area or suburb<input name="localArea"></label><label>City<input name="city"></label></div>
-        <div class="form-grid"><label>Province<select name="province"><option>Limpopo</option><option>Gauteng</option><option>Mpumalanga</option><option>North West</option><option>KwaZulu-Natal</option><option>Free State</option><option>Northern Cape</option><option>Eastern Cape</option><option>Western Cape</option></select></label><label>Postal code<input name="postalCode"></label></div>
-        <label class="switch-line"><input type="checkbox" name="saveNewAddress"> Save this address</label>
-        <label id="checkout-address-label" hidden>Address label<input name="addressLabel" placeholder="Home, Work, Campus"></label>
-      </div>
+        <h2>Your order</h2>
 
-      <button class="primary-button" id="checkout-submit">Get delivery and continue</button>
-      <p class="form-message" id="checkout-message" aria-live="polite"></p>
-    </form></div>
-    <aside class="order-summary glass"><h2>Your order</h2>${rows.map((line) => `<div class="summary-line"><span>${line.quantity} × ${escapeHtml(line.product.name)}</span><strong>${money(line.quantity*line.product.priceCents)}</strong></div>`).join("")}<div class="summary-line summary-total"><span>Before delivery</span><strong>${money(subtotal)}</strong></div><p><small>Payment becomes final only after Paystack confirms it to Kompo Nation.</small></p></aside>
-  </section>`;
+        ${
+          rows
+            .map(
+              (line) => `
+                <div class="summary-line">
+                  <span>
+                    ${line.quantity}
+                    ×
+                    ${escapeHtml(line.product.name)}
+                  </span>
 
-  const form = document.querySelector("#checkout-form");
-  form.querySelectorAll('[name="addressMode"]').forEach((radio) => radio.addEventListener("change", () => {
-    const useNew = form.elements.addressMode.value === "new";
-    const newFields = document.querySelector("#new-address-fields");
-    const savedFields = document.querySelector("#saved-address-fields");
-    if (newFields) newFields.hidden = !useNew;
-    if (savedFields) savedFields.hidden = useNew;
-  }));
-  form.querySelector('[name="saveNewAddress"]')?.addEventListener("change", (e) => {
-    document.querySelector("#checkout-address-label").hidden = !e.target.checked;
-  });
-  form.addEventListener("submit", beginCheckout);
+                  <strong>
+                    ${
+                      money(
+                        Number(line.quantity) *
+                        Number(line.unitPriceCents)
+                      )
+                    }
+                  </strong>
+                </div>
+              `
+            )
+            .join("")
+        }
+
+        <div class="summary-line summary-total">
+          <span>Before delivery</span>
+          <strong>${money(subtotal)}</strong>
+        </div>
+
+        <p>
+          <small>
+            Enter the delivery address to get the live courier price.
+          </small>
+        </p>
+
+      </aside>
+
+    </section>
+  `;
+
+  const form =
+    document.querySelector("#checkout-form");
+
+  form
+    .querySelectorAll('[name="addressMode"]')
+    .forEach((radio) =>
+      radio.addEventListener(
+        "change",
+        () => {
+          const useNew =
+            form.elements.addressMode.value === "new";
+
+          const newFields =
+            document.querySelector(
+              "#new-address-fields"
+            );
+
+          const savedFields =
+            document.querySelector(
+              "#saved-address-fields"
+            );
+
+          if (newFields) {
+            newFields.hidden = !useNew;
+          }
+
+          if (savedFields) {
+            savedFields.hidden = useNew;
+          }
+        }
+      )
+    );
+
+  form
+    .querySelector('[name="saveNewAddress"]')
+    ?.addEventListener(
+      "change",
+      (event) => {
+        const label =
+          document.querySelector(
+            "#checkout-address-label"
+          );
+
+        if (label) {
+          label.hidden =
+            !event.target.checked;
+        }
+      }
+    );
+
+  form.addEventListener(
+    "submit",
+    beginCheckout
+  );
 }
+
 
 async function beginCheckout(event) {
   event.preventDefault();
-  const button = document.querySelector("#checkout-submit");
-  const message = document.querySelector("#checkout-message");
-  button.disabled = true; button.textContent = "Preparing secure checkout…";
+
+  const formElement =
+    event.currentTarget;
+
+  const button =
+    document.querySelector("#checkout-submit");
+
+  const message =
+    document.querySelector("#checkout-message");
+
+  button.disabled = true;
+  button.textContent = "Getting live delivery…";
+
+  message.textContent = "";
+
   try {
-    const values = Object.fromEntries(new FormData(event.currentTarget));
-    let address, contact;
 
-    if ((values.addressMode || "new") === "saved") {
-      const saved = (state.checkoutAddresses || []).find((a) => a.id === values.savedAddressId);
-      if (!saved) throw new Error("Choose a saved address.");
-      address = { streetAddress:saved.street_address,localArea:saved.local_area || "",city:saved.city,province:saved.province,postalCode:saved.postal_code,country:saved.country_code || "ZA" };
-      contact = { fullName:saved.recipient_name,phone:saved.phone || state.session.user.user_metadata?.phone || "",email:state.session.user.email };
-      if (!contact.phone) throw new Error("Add a phone number to this saved address.");
+    const values =
+      Object.fromEntries(
+        new FormData(formElement)
+      );
+
+    let address;
+    let contact;
+
+    if (
+      (values.addressMode || "new") ===
+      "saved"
+    ) {
+
+      const saved =
+        (state.checkoutAddresses || [])
+          .find(
+            (item) =>
+              item.id ===
+              values.savedAddressId
+          );
+
+      if (!saved) {
+        throw new Error(
+          "Choose a saved address."
+        );
+      }
+
+      if (
+        !String(
+          saved.local_area || ""
+        ).trim()
+      ) {
+        throw new Error(
+          "This saved address needs an area or suburb. Choose New address and enter the complete address."
+        );
+      }
+
+      address = {
+        streetAddress:
+          saved.street_address,
+        localArea:
+          saved.local_area,
+        city:
+          saved.city,
+        province:
+          saved.province,
+        postalCode:
+          saved.postal_code,
+        country:
+          saved.country_code || "ZA"
+      };
+
+      contact = {
+        fullName:
+          saved.recipient_name,
+        phone:
+          saved.phone ||
+          state.session.user
+            .user_metadata?.phone ||
+          "",
+        email:
+          state.session.user.email
+      };
+
+      if (!contact.phone) {
+        throw new Error(
+          "Add a phone number to this saved address."
+        );
+      }
+
     } else {
-      for (const key of ["fullName","phone","streetAddress","city","province","postalCode"]) if (!String(values[key] || "").trim()) throw new Error("Complete all delivery details.");
-      address = { streetAddress:values.streetAddress.trim(),localArea:String(values.localArea || "").trim(),city:values.city.trim(),province:values.province,postalCode:values.postalCode.trim(),country:"ZA" };
-      contact = { fullName:values.fullName.trim(),phone:values.phone.trim(),email:state.session.user.email };
 
-      if (values.saveNewAddress === "on") {
-        const label = String(values.addressLabel || "").trim();
-        if (!label) throw new Error("Give the saved address a label.");
-        const { error: saveError } = await supabase.from("addresses").insert({
-          customer_id:state.session.user.id,label,recipient_name:contact.fullName,phone:contact.phone,
-          street_address:address.streetAddress,local_area:address.localArea,city:address.city,
-          province:address.province,postal_code:address.postalCode,country_code:"ZA",
-          is_default:(state.checkoutAddresses || []).length === 0
-        });
-        if (saveError) throw saveError;
+      for (
+        const key of [
+          "fullName",
+          "phone",
+          "streetAddress",
+          "localArea",
+          "city",
+          "province",
+          "postalCode"
+        ]
+      ) {
+        if (
+          !String(
+            values[key] || ""
+          ).trim()
+        ) {
+          throw new Error(
+            "Complete all delivery details, including the area or suburb."
+          );
+        }
+      }
+
+      address = {
+        streetAddress:
+          values.streetAddress.trim(),
+        localArea:
+          values.localArea.trim(),
+        city:
+          values.city.trim(),
+        province:
+          values.province,
+        postalCode:
+          values.postalCode.trim(),
+        country:
+          "ZA"
+      };
+
+      contact = {
+        fullName:
+          values.fullName.trim(),
+        phone:
+          values.phone.trim(),
+        email:
+          state.session.user.email
+      };
+
+      if (
+        values.saveNewAddress === "on"
+      ) {
+
+        const label =
+          String(
+            values.addressLabel || ""
+          ).trim();
+
+        if (!label) {
+          throw new Error(
+            "Give the saved address a label."
+          );
+        }
+
+        const { error: saveError } =
+          await supabase
+            .from("addresses")
+            .insert({
+              customer_id:
+                state.session.user.id,
+              label,
+              recipient_name:
+                contact.fullName,
+              phone:
+                contact.phone,
+              street_address:
+                address.streetAddress,
+              local_area:
+                address.localArea,
+              city:
+                address.city,
+              province:
+                address.province,
+              postal_code:
+                address.postalCode,
+              country_code:
+                "ZA",
+              is_default:
+                (
+                  state.checkoutAddresses ||
+                  []
+                ).length === 0
+            });
+
+        if (saveError) {
+          throw saveError;
+        }
       }
     }
 
-    const lines = state.cart.map(({productId,quantity,size,colour}) => ({productId,quantity,size,colour}));
-    const headers = {"Content-Type":"application/json",...(await authHeader())};
+    const lines =
+      state.cart.map(
+        ({
+          productId,
+          quantity,
+          size,
+          colour
+        }) => ({
+          productId,
+          quantity,
+          size,
+          colour
+        })
+      );
 
-    const quoteResponse = await fetch(`${CONFIG.functionsBase}/shipping-quote`,{method:"POST",headers,body:JSON.stringify({lines,address,contact})});
-    const quoteData = await quoteResponse.json();
-    if (!quoteResponse.ok) throw new Error(quoteData.error || "Delivery could not be quoted.");
+    const headers = {
+      "Content-Type":
+        "application/json",
+      ...(await authHeader())
+    };
 
-    const checkoutResponse = await fetch(`${CONFIG.functionsBase}/create-checkout`,{method:"POST",headers,body:JSON.stringify({lines,address,contact,quotes:quoteData.quotes})});
-    const checkout = await checkoutResponse.json();
-    if (!checkoutResponse.ok) throw new Error(checkout.error || "Checkout could not be started.");
-    if (!checkout.authorizationUrl) throw new Error("Secure payment link was not returned.");
-    location.href = checkout.authorizationUrl;
+    const quoteResponse =
+      await fetch(
+        `${CONFIG.functionsBase}/shipping-quote`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            lines,
+            address,
+            contact
+          })
+        }
+      );
+
+    const quoteData =
+      await quoteResponse.json();
+
+    if (!quoteResponse.ok) {
+      throw new Error(
+        quoteData.error ||
+        "Delivery could not be quoted."
+      );
+    }
+
+    const quotes =
+      Array.isArray(quoteData.quotes)
+        ? quoteData.quotes
+        : [];
+
+    if (!quotes.length) {
+      throw new Error(
+        "No delivery quote was returned."
+      );
+    }
+
+    const rows =
+      cartRows();
+
+    const subtotal =
+      rows.reduce(
+        (sum, line) =>
+          sum +
+          Number(line.unitPriceCents) *
+          Number(line.quantity),
+        0
+      );
+
+    const courierDelivery =
+      quotes.reduce(
+        (sum, quote) =>
+          sum +
+          Number(
+            quote.courierCostCents ??
+            quote.amountCents ??
+            0
+          ),
+        0
+      );
+
+    const logisticsFulfilment =
+      quotes.reduce(
+        (sum, quote) =>
+          sum +
+          Math.max(
+            0,
+            Number(
+              quote.logisticsFeeCents ??
+              0
+            )
+          ),
+        0
+      );
+
+    const totalDelivery =
+      quotes.reduce(
+        (sum, quote) =>
+          sum +
+          Number(
+            quote.amountCents || 0
+          ),
+        0
+      );
+
+    const totalDue =
+      subtotal +
+      totalDelivery;
+
+    pendingCheckoutReview = {
+      lines,
+      address,
+      contact,
+      quotes,
+      subtotal,
+      totalDelivery
+    };
+
+    const courierLines =
+      quotes
+        .map(
+          (quote) => {
+
+            const cutoff =
+              String(
+                quote.collectionCutoffTime ||
+                ""
+              ).slice(0, 5);
+
+            return `
+              <div class="checkout-courier-service">
+
+                <strong>
+                  ${escapeHtml(
+                    quote.storeName ||
+                    "Store delivery"
+                  )}
+                </strong>
+
+                <small>
+                  ${escapeHtml(
+                    quote.courierName ||
+                    "Courier"
+                  )}
+                  ·
+                  ${escapeHtml(
+                    quote.serviceName ||
+                    "Door-to-door delivery"
+                  )}
+                  ${
+                    cutoff
+                      ? ` · Collection request cut-off ${escapeHtml(cutoff)}`
+                      : ""
+                  }
+                </small>
+
+              </div>
+            `;
+          }
+        )
+        .join("");
+
+    formElement.hidden = true;
+
+    const summary =
+      document.querySelector(
+        "#checkout-summary"
+      );
+
+    summary.innerHTML = `
+      <p class="eyebrow">
+        ORDER REVIEW
+      </p>
+
+      <h2>Check before payment</h2>
+
+      ${
+        rows
+          .map(
+            (line) => `
+              <div class="summary-line">
+                <span>
+                  ${line.quantity}
+                  ×
+                  ${escapeHtml(
+                    line.product.name
+                  )}
+                </span>
+
+                <strong>
+                  ${
+                    money(
+                      Number(
+                        line.quantity
+                      ) *
+                      Number(
+                        line.unitPriceCents
+                      )
+                    )
+                  }
+                </strong>
+              </div>
+            `
+          )
+          .join("")
+      }
+
+      <div class="checkout-review-divider"></div>
+
+      <div class="summary-line delivery-breakdown-muted">
+        <span>Courier delivery</span>
+        <span>${money(courierDelivery)}</span>
+      </div>
+
+      <div class="summary-line delivery-breakdown-muted">
+        <span>Logistics & fulfilment</span>
+        <span>${money(logisticsFulfilment)}</span>
+      </div>
+
+      <div class="summary-line delivery-total-row">
+        <span>Total delivery</span>
+        <strong>${money(totalDelivery)}</strong>
+      </div>
+
+      <div class="summary-line checkout-total-due">
+        <span>Total due</span>
+        <strong>${money(totalDue)}</strong>
+      </div>
+
+      <div class="checkout-courier-list">
+        ${courierLines}
+      </div>
+
+      <button
+        class="primary-button checkout-payment-button"
+        id="continue-secure-payment"
+        type="button"
+      >
+        Continue to secure payment
+      </button>
+
+      <button
+        class="quiet-button checkout-change-button"
+        id="change-delivery-details"
+        type="button"
+      >
+        Change delivery details
+      </button>
+
+      <p
+        class="form-message"
+        id="payment-review-message"
+        aria-live="polite"
+      ></p>
+
+      <p class="checkout-review-note">
+        <small>
+          You will be redirected to Paystack only after you continue.
+          Delivery quotes can expire, so complete payment shortly after reviewing the order.
+        </small>
+      </p>
+    `;
+
+    document
+      .querySelector(
+        "#continue-secure-payment"
+      )
+      .addEventListener(
+        "click",
+        continueCheckoutToPayment
+      );
+
+    document
+      .querySelector(
+        "#change-delivery-details"
+      )
+      .addEventListener(
+        "click",
+        () => renderCheckout()
+      );
+
   } catch (error) {
-    message.textContent = error.message;
-    button.disabled = false; button.textContent = "Get delivery and continue";
+
+    message.textContent =
+      error.message;
+
+    button.disabled = false;
+    button.textContent =
+      "Get delivery quote";
   }
 }
 
-/* ========================================================================== */
+
+async function continueCheckoutToPayment() {
+
+  const pending =
+    pendingCheckoutReview;
+
+  const button =
+    document.querySelector(
+      "#continue-secure-payment"
+    );
+
+  const message =
+    document.querySelector(
+      "#payment-review-message"
+    );
+
+  if (!pending) {
+    if (message) {
+      message.textContent =
+        "Request a new delivery quote first.";
+    }
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent =
+    "Opening secure payment…";
+
+  if (message) {
+    message.textContent = "";
+  }
+
+  try {
+
+    const headers = {
+      "Content-Type":
+        "application/json",
+      ...(await authHeader())
+    };
+
+    const checkoutResponse =
+      await fetch(
+        `${CONFIG.functionsBase}/create-checkout`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            lines:
+              pending.lines,
+            address:
+              pending.address,
+            contact:
+              pending.contact,
+            quotes:
+              pending.quotes
+          })
+        }
+      );
+
+    const checkout =
+      await checkoutResponse.json();
+
+    if (!checkoutResponse.ok) {
+      throw new Error(
+        checkout.error ||
+        "Checkout could not be started."
+      );
+    }
+
+    if (!checkout.authorizationUrl) {
+      throw new Error(
+        "Secure payment link was not returned."
+      );
+    }
+
+    location.href =
+      checkout.authorizationUrl;
+
+  } catch (error) {
+
+    if (message) {
+      message.textContent =
+        error.message;
+    }
+
+    button.disabled = false;
+    button.textContent =
+      "Continue to secure payment";
+  }
+}
+
 /* 05. CUSTOMER ACCOUNT                                                       */
 /* ========================================================================== */
 

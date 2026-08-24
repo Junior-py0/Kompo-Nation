@@ -398,6 +398,11 @@ Deno.serve(async (request: Request) => {
                 amountCents: Math.round(
                   Number(service?.rate_amount || 0) * 100
                 ),
+
+                // BOBGO_COLLECTION_METADATA_V1
+                collectionCutoffTime: String(
+                  service?.service_level?.collection_cut_off_time || ""
+                ),
               }));
           })
           .filter((item: any) =>
@@ -451,6 +456,32 @@ Deno.serve(async (request: Request) => {
         });
       }
 
+      // DELIVERY_PRICING_V1
+      const courierCostCents =
+        Math.max(
+          0,
+          Number(selected.amountCents || 0),
+        );
+
+      const customerDeliveryCents =
+        courierCostCents <= 10000
+          ? 10000
+          : courierCostCents < 16000
+            ? Math.min(
+                16000,
+                Math.round(
+                  courierCostCents * 1.10,
+                ),
+              )
+            : courierCostCents;
+
+      const logisticsFeeCents =
+        Math.max(
+          0,
+          customerDeliveryCents -
+            courierCostCents,
+        );
+
       const signed = {
         vendorId,
         rateId: selected.rateId,
@@ -458,21 +489,40 @@ Deno.serve(async (request: Request) => {
           selected.serviceLevelCode,
         providerSlug:
           selected.providerSlug,
+
+        // This is the amount the customer actually pays.
+        // It is included in the signed quote and cannot be
+        // reduced by changing browser-side checkout code.
         amountCents:
-          selected.amountCents,
+          customerDeliveryCents,
+
         destinationPostalCode:
           address.postalCode,
+
         expiresAt,
       };
 
       quotes.push({
         ...signed,
+
         storeName:
           vendor.business_name,
+
         courierName:
           selected.courierName,
+
         serviceName:
           selected.serviceName,
+
+        courierCostCents,
+        logisticsFeeCents,
+
+        collectionCutoffTime:
+          String(
+            selected.collectionCutoffTime ||
+            "",
+          ),
+
         signature:
           await signQuote(signed),
       });
