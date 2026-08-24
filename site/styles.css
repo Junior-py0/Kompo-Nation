@@ -1204,3 +1204,64 @@ button, a { -webkit-tap-highlight-color: transparent; }
     flex-direction: column;
   }
 }
+
+
+/* FINAL_VENDOR_GUIDANCE_V2 */
+
+.collection-timing-box {
+  display: grid;
+  gap: .28rem;
+  margin: .85rem 0;
+  padding: .8rem .85rem;
+  border-radius: 13px;
+  border: 1px solid rgba(36,43,38,.09);
+  background: rgba(36,43,38,.045);
+}
+
+.collection-timing-box > span {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  opacity: .55;
+}
+
+.collection-timing-box > strong {
+  font-size: .98rem;
+}
+
+.collection-timing-box > small {
+  line-height: 1.45;
+  opacity: .66;
+}
+
+.vendor-information-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(290px, 1fr)
+    );
+  gap: 1rem;
+}
+
+.vendor-info-card {
+  display: flex;
+  flex-direction: column;
+  gap: .58rem;
+}
+
+.vendor-info-card h2,
+.vendor-info-card p {
+  margin: 0;
+}
+
+.vendor-info-card p {
+  line-height: 1.62;
+}
+
+@media (max-width: 720px) {
+  .vendor-information-grid {
+    grid-template-columns: 1fr;
+  }
+}

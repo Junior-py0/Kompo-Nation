@@ -1080,6 +1080,7 @@ function renderCart() {
 
 
 // CHECKOUT_REVIEW_FLOW_V1
+// CUSTOMER_HIDE_COLLECTION_CUTOFF_V2
 let pendingCheckoutReview = null;
 
 async function renderCheckout() {
@@ -1773,11 +1774,7 @@ async function beginCheckout(event) {
                     quote.serviceName ||
                     "Door-to-door delivery"
                   )}
-                  ${
-                    cutoff
-                      ? ` · Collection request cut-off ${escapeHtml(cutoff)}`
-                      : ""
-                  }
+
                 </small>
 
               </div>

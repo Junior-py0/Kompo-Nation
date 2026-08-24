@@ -117,6 +117,7 @@ function showError(error) {
 /* 03. OVERVIEW                                                               */
 /* ========================================================================== */
 async function renderOverview() {
+  // VENDOR_COMMISSION_PRIVACY_V2
   const orderQuery = supabase.from("vendor_orders").select("id,merchandise_total_cents,commission_total_cents,fulfilment_status,created_at,vendors(business_name)").order("created_at", { ascending: false }).limit(50);
   const { data: orders, error } = area === "vendor" ? await orderQuery.eq("vendor_id", state.currentVendorId) : await orderQuery;
   if (error) throw error;
@@ -124,7 +125,17 @@ async function renderOverview() {
   const commission = orders.reduce((sum, order) => sum + Number(order.commission_total_cents), 0);
   const open = orders.filter((order) => !["delivered", "cancelled"].includes(order.fulfilment_status)).length;
   content.innerHTML = `${header(area === "admin" ? "CONTROL ROOM" : "STORE PULSE", area === "admin" ? "Nation overview" : "Your store today", area === "admin" ? "Marketplace activity across every active store." : "Sales and fulfilment for the selected store.")}
-    <div class="stat-grid"><article class="stat-card"><span>Merchandise value</span><strong>${money(gross)}</strong><small>Loaded order history</small></article><article class="stat-card"><span>Commission recorded</span><strong>${money(commission)}</strong><small>Item-level calculation</small></article><article class="stat-card"><span>Open packages</span><strong>${open}</strong><small>Still moving</small></article><article class="stat-card"><span>${area === "admin" ? "Active stores" : "Products sold"}</span><strong>${area === "admin" ? state.stores.filter((store) => store.status === "active").length : orders.length}</strong><small>Current view</small></article></div>
+    <div class="stat-grid"><article class="stat-card"><span>Merchandise value</span><strong>${money(gross)}</strong><small>Loaded order history</small></article>${
+      area === "admin"
+        ? `
+          <article class="stat-card">
+            <span>Commission earned</span>
+            <strong>${money(commission)}</strong>
+            <small>Operator-only platform earnings</small>
+          </article>
+        `
+        : ""
+    }<article class="stat-card"><span>Open packages</span><strong>${open}</strong><small>Still moving</small></article><article class="stat-card"><span>${area === "admin" ? "Active stores" : "Products sold"}</span><strong>${area === "admin" ? state.stores.filter((store) => store.status === "active").length : orders.length}</strong><small>Current view</small></article></div>
     <div class="dashboard-grid"><section class="dashboard-panel"><div class="panel-heading"><h2>Latest movement</h2><button class="table-action" data-open-view="orders">View orders</button></div>${orders.slice(0, 7).map((order) => { const vendor = Array.isArray(order.vendors) ? order.vendors[0] : order.vendors; return `<article class="order-card"><div><strong>${escapeHtml(vendor?.business_name || "Store")}</strong><p>${new Date(order.created_at).toLocaleString(CONFIG.locale)}</p></div><span class="status-pill">${escapeHtml(order.fulfilment_status.replaceAll("_", " "))}</span></article>`; }).join("") || "<p>No paid packages are available yet.</p>"}</section><section class="dashboard-panel"><div class="panel-heading"><h2>Operating rule</h2></div><p>${area === "admin" ? "Operator permission is checked by Supabase RLS on every database request. Opening this page does not bypass the database." : "Online stock must remain separate from stock promised elsewhere. Update it before accepting new sales."}</p></section></div>`;
 }
 
@@ -662,6 +673,7 @@ async function createProduct(form) {
 }/* 06. ORDER AND RETURN MANAGEMENT                                            */
 /* ========================================================================== */
 async function renderOrders() {
+  // VENDOR_ORDER_COMMISSION_PRIVACY_V2
   const query = supabase
     .from("vendor_orders")
     .select(
@@ -787,13 +799,15 @@ async function renderOrders() {
             }
           </td>
 
-          <td>
-            ${
-              money(
-                order.commission_total_cents
-              )
+          ${
+              area === "admin"
+                ? `
+                  <td>
+                    ${money(order.commission_total_cents)}
+                  </td>
+                `
+                : ""
             }
-          </td>
 
           <td>
             <span class="status-pill">
@@ -836,7 +850,11 @@ async function renderOrders() {
               <th>Store</th>
               <th>Customer</th>
               <th>Value</th>
-              <th>Commission</th>
+              ${
+                area === "admin"
+                  ? "<th>Commission</th>"
+                  : ""
+              }
               <th>Status</th>
               <th>Move</th>
             </tr>
@@ -991,24 +1009,32 @@ async function renderOrders() {
                   </span>
                 </div>
 
-                ${
-                  cutoff
-                    ? `
-                      <p class="collection-cutoff">
-                        Collection request cut-off:
-                        <strong>
-                          ${escapeHtml(cutoff)}
-                        </strong>
-                        <br>
-                        Requests made after the courier's service cut-off may move to the next business day.
-                      </p>
-                    `
-                    : `
-                      <p class="collection-cutoff">
-                        The final collection schedule is confirmed when the courier booking is created.
-                      </p>
-                    `
-                }
+                <!-- COLLECTION_TIMING_CLARITY_V2 -->
+                <div class="collection-timing-box">
+
+                  <span>Collection timing</span>
+
+                  <strong>
+                    ${
+                      order.fulfilment_status === "booked"
+                        ? "Courier booking created"
+                        : cutoff
+                          ? `Request before ${escapeHtml(cutoff)}`
+                          : "Timing confirmed after booking"
+                    }
+                  </strong>
+
+                  <small>
+                    ${
+                      order.fulfilment_status === "booked"
+                        ? "The courier controls the driver route and actual arrival time. Follow tracking or courier confirmation for collection updates."
+                        : cutoff
+                          ? `The ${escapeHtml(cutoff)} time is the deadline for requesting this courier service. It is not the driver's arrival time.`
+                          : "The courier's collection schedule becomes available once the shipment is booked."
+                    }
+                  </small>
+
+                </div>
 
                 <p>
                   ${escapeHtml(explanation)}
@@ -1078,6 +1104,244 @@ async function renderCancellations() {
 /* ========================================================================== */
 /* 07. SETTINGS                                                               */
 /* ========================================================================== */
+
+// VENDOR_ADDITIONAL_INFORMATION_V2
+function renderInformation() {
+
+  if (area !== "vendor") {
+    return;
+  }
+
+  const currentStore =
+    state.stores.find(
+      (store) =>
+        store.id ===
+        state.currentVendorId
+    );
+
+  const commissionPercent =
+    Number(
+      currentStore?.commission_rate_bps ||
+      1000
+    ) / 100;
+
+  content.innerHTML = `
+    ${
+      header(
+        "ADDITIONAL INFORMATION",
+        "How selling on Kompo Nation works",
+        "Store sales, packaging, courier collection and fulfilment explained."
+      )
+    }
+
+    <div class="vendor-information-grid">
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">SALES</p>
+        <h2>Marketplace commission</h2>
+
+        <p>
+          Your current Kompo Nation marketplace commission rate is
+          <strong>${commissionPercent}%</strong>
+          of merchandise sales.
+        </p>
+
+        <p>
+          Commission is calculated as part of the marketplace transaction.
+          Your portal focuses on your store's sales and fulfilment activity;
+          Kompo Nation's cumulative platform earnings are private operator
+          information.
+        </p>
+
+        <p>
+          Your agreed commission and settlement terms should always match
+          your current vendor agreement with Kompo Nation.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">PRODUCT DETAILS</p>
+        <h2>Product weight</h2>
+
+        <p>
+          Enter the real weight of one individual product. Kompo Nation
+          uses product weight when calculating the weight of parcels sent
+          to the courier.
+        </p>
+
+        <p>
+          Do not include the shipping box in the product weight. Packaging
+          weight is entered separately under Store settings.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">PACKAGING</p>
+        <h2>Standard shipping package</h2>
+
+        <p>
+          Store settings contain your standard box length, width, height,
+          empty packaging weight and number of items that normally fit
+          inside one package.
+        </p>
+
+        <p>
+          If the package capacity is three items, one to three ordered
+          units are packed as one parcel, four to six as two parcels,
+          seven to nine as three parcels, and so on.
+        </p>
+
+        <p>
+          Use realistic measurements. Couriers may physically reweigh or
+          remeasure parcels, and incorrect package information can cause
+          collection problems or additional courier charges.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">FULFILMENT</p>
+        <h2>Preparing an order</h2>
+
+        <p>
+          A new paid order moves through the vendor fulfilment stages:
+          Accepted, Packing, Packed and Ready for collection.
+        </p>
+
+        <p>
+          Only mark an order Packed once all products are inside the
+          correct package and the parcel is sealed and ready.
+        </p>
+
+        <p>
+          Marking a parcel Packed does not call a courier.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">READY FOR COLLECTION</p>
+        <h2>When to mark the parcel ready</h2>
+
+        <p>
+          Choose Parcel is ready for collection only when the parcel is
+          physically at your saved collection address and somebody can
+          hand it to the courier.
+        </p>
+
+        <p>
+          Ready for collection is an internal Kompo Nation status. It does
+          not yet create the Bob Go courier booking.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">COURIER BOOKING</p>
+        <h2>Booking collection</h2>
+
+        <p>
+          Book courier collection is the step that creates the actual
+          shipment through Kompo Nation's Bob Go integration.
+        </p>
+
+        <p>
+          The courier receives the store collection address, the customer
+          delivery address, parcel measurements, parcel weight and the
+          courier service selected for that order.
+        </p>
+
+        <p>
+          Because Kompo Nation uses a production courier connection,
+          pressing Book courier collection should only be done when the
+          parcel really is ready for handover.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">COLLECTION TIMING</p>
+        <h2>Cut-off time vs pickup time</h2>
+
+        <p>
+          If the portal says Request before 14:00, for example, 14:00 is
+          the courier service's booking cut-off. It does not mean the
+          driver will arrive at 14:00.
+        </p>
+
+        <p>
+          Booking before the displayed cut-off gives the shipment the best
+          chance of entering that courier's current collection cycle.
+          Requests made after a cut-off may move to the next business day.
+        </p>
+
+        <p>
+          The courier controls the driver's route and actual arrival time.
+          After the booking is created, use courier confirmation and
+          tracking updates for the latest collection information.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">HANDOVER</p>
+        <h2>When the courier arrives</h2>
+
+        <p>
+          Keep the correct sealed parcel available at the collection
+          address and make sure somebody there knows that a courier pickup
+          is expected.
+        </p>
+
+        <p>
+          Attach any required waybill or shipping label before handover.
+          Do not treat the parcel as collected simply because a booking
+          exists; physical collection is confirmed by the courier status.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">TRACKING</p>
+        <h2>After handover</h2>
+
+        <p>
+          Pending collection means the courier booking exists but the
+          parcel has not yet been collected.
+        </p>
+
+        <p>
+          Collected means the courier has taken the parcel. In transit
+          means it is moving through the courier network. Out for delivery
+          means it is with the delivery driver, and Delivered means it has
+          reached the recipient.
+        </p>
+      </section>
+
+
+      <section class="dashboard-panel vendor-info-card">
+        <p class="eyebrow">STORE DETAILS</p>
+        <h2>Keep information accurate</h2>
+
+        <p>
+          Keep your collection street address, suburb or area, city,
+          province, postal code, contact phone and contact email current.
+        </p>
+
+        <p>
+          Correct product weights and package information are also
+          important because courier rates and successful collections rely
+          on this information.
+        </p>
+      </section>
+
+    </div>
+  `;
+}
+
+
 async function renderSettings() {
   if (area === "admin") {
     const { data, error } = await supabase.from("marketplace_settings").select("key,value").order("key");
@@ -1509,6 +1773,7 @@ async function renderView() {
   if (state.view === "orders") return renderOrders();
   if (state.view === "cancellations") return renderCancellations();
   if (state.view === "returns") return renderReturns();
+  if (state.view === "information") return renderInformation();
   if (state.view === "settings") return renderSettings();
 }
 
