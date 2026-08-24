@@ -1,4 +1,4 @@
-﻿import {
+import {
   authenticatedUser,
   json,
   preflight,
@@ -40,6 +40,39 @@ function mapAddress(address: Address) {
     country: address.country || "ZA",
     code: address.postalCode,
   };
+}
+
+// STANDARD_PACKAGE_SHIPPING_V1
+function buildStandardParcels(lines: any[], settings: any, vendorId: string) {
+  const length = Number(settings?.package_length_cm);
+  const width = Number(settings?.package_width_cm);
+  const height = Number(settings?.package_height_cm);
+  const tare = Math.max(0, Number(settings?.package_tare_weight_kg || 0));
+  const capacity = Math.max(1, Math.floor(Number(settings?.package_item_capacity || 3)));
+  if (![length,width,height].every((value) => Number.isFinite(value) && value > 0)) throw new Error("Set the store's standard shipping package dimensions before requesting delivery rates.");
+
+  const units: any[] = [];
+  for (const item of lines) {
+    const quantity = Math.max(0, Math.floor(Number(item?.line?.quantity || 0)));
+    const weightKg = Number(item?.variant?.weight_kg);
+    if (!Number.isFinite(weightKg) || weightKg <= 0) throw new Error(`${item?.product?.name || "An item"} needs a valid item weight before shipping can be quoted.`);
+    for (let index = 0; index < quantity; index += 1) units.push({ name:item.product.name, sku:item.variant.sku, weightKg });
+  }
+
+  const parcels: any[] = [];
+  for (let start = 0; start < units.length; start += capacity) {
+    const chunk = units.slice(start, start + capacity);
+    const names = [...new Set(chunk.map((unit) => unit.name))].join(", ");
+    parcels.push({
+      description: `${chunk.length} item${chunk.length === 1 ? "" : "s"}: ${names}`.slice(0, 180),
+      submitted_length_cm: length,
+      submitted_width_cm: width,
+      submitted_height_cm: height,
+      submitted_weight_kg: Number((tare + chunk.reduce((sum, unit) => sum + unit.weightKg, 0)).toFixed(3)),
+      custom_parcel_reference: `${vendorId.slice(0,8)}-P${parcels.length + 1}`,
+    });
+  }
+  return parcels;
 }
 
 Deno.serve(async (request: Request) => {
@@ -94,7 +127,7 @@ Deno.serve(async (request: Request) => {
       "collection_city," +
       "collection_province," +
       "collection_postal_code," +
-      "collection_country_code))," +
+      "collection_country_code,package_length_cm,package_width_cm,package_height_cm,package_tare_weight_kg,package_item_capacity))," +
       "product_variants(" +
       "id,sku,size,colour,price_cents," +
       "stock_quantity,weight_kg,length_cm," +
@@ -265,32 +298,7 @@ Deno.serve(async (request: Request) => {
           delivery_address:
             mapAddress(address),
 
-          parcels: group.lines.map(
-            ({
-              line,
-              product,
-              variant,
-            }) => ({
-              description:
-                `${product.name} × ${line.quantity}`,
-
-              submitted_length_cm:
-                Number(variant.length_cm),
-
-              submitted_width_cm:
-                Number(variant.width_cm),
-
-              submitted_height_cm:
-                Number(variant.height_cm),
-
-              submitted_weight_kg:
-                Number(variant.weight_kg) *
-                Number(line.quantity),
-
-              custom_parcel_reference:
-                variant.sku,
-            }),
-          ),
+          parcels: buildStandardParcels(group.lines, privateSettings, String(vendorId)),
 
           collection_contact_mobile_number:
             privateSettings.contact_phone ||

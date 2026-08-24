@@ -430,6 +430,7 @@ async function createStore(form) {
 
 /* ========================================================================== */
 /* 05. PRODUCT MANAGEMENT                                                     */
+/* STANDARD_PACKAGE_PRODUCT_UI_V1                                             */
 /* ========================================================================== */
 const SIZE_PRESETS = ["XS","S","M","L","XL","2XL","3XL","One size"];
 const listValues = (value) => [...new Set(String(value || "").split(",").map((v) => v.trim()).filter(Boolean))];
@@ -438,6 +439,20 @@ function sizePicker() {
   return SIZE_PRESETS.map((size) =>
     `<label class="size-check"><input type="checkbox" name="sizes" value="${escapeHtml(size)}"><span>${escapeHtml(size)}</span></label>`
   ).join("");
+}
+
+function weightForDisplay(weightKg) {
+  const kg = Number(weightKg);
+  if (Number.isFinite(kg) && kg > 0 && kg < 1) return { value: Math.round(kg * 1000), unit: "g" };
+  return { value: Number.isFinite(kg) && kg > 0 ? Number(kg.toFixed(3)) : 0.25, unit: "kg" };
+}
+
+function weightToKg(value, unit, allowZero = false) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || (!allowZero && number <= 0)) {
+    throw new Error(allowZero ? "Enter a valid packaging weight." : "Enter a valid item weight.");
+  }
+  return unit === "g" ? number / 1000 : number;
 }
 
 async function uploadProductImages(productId, vendorId, files, altText = "") {
@@ -477,15 +492,16 @@ async function renderProducts() {
   const { data: products, error } = area === "vendor" ? await query.eq("vendor_id", state.currentVendorId) : await query;
   if (error) throw error;
 
-  const vendorOptions = (area === "admin" ? state.stores : state.stores.filter((s) => s.id === state.currentVendorId))
-    .map((s) => `<option value="${s.id}">${escapeHtml(s.business_name)}</option>`).join("");
+  const vendorOptions = (area === "admin" ? state.stores : state.stores.filter((store) => store.id === state.currentVendorId))
+    .map((store) => `<option value="${store.id}">${escapeHtml(store.business_name)}</option>`).join("");
 
   const productCards = products.map((product) => {
     const vendor = Array.isArray(product.vendors) ? product.vendors[0] : product.vendors;
     const variants = product.product_variants || [];
     const media = (product.product_media || []).slice().sort((a,b) => Number(a.sort_order) - Number(b.sort_order));
-    const totalStock = variants.reduce((sum,v) => sum + Number(v.stock_quantity), 0);
-    const minPrice = variants.length ? Math.min(...variants.map((v) => Number(v.price_cents))) : 0;
+    const totalStock = variants.reduce((sum,variant) => sum + Number(variant.stock_quantity), 0);
+    const minPrice = variants.length ? Math.min(...variants.map((variant) => Number(variant.price_cents))) : 0;
+    const displayWeight = weightForDisplay(variants[0]?.weight_kg);
 
     return `<article class="terminal-product-card">
       <div class="terminal-product-summary">
@@ -501,65 +517,69 @@ async function renderProducts() {
       </div>
 
       <section class="terminal-product-panel" id="manage-${product.id}" hidden>
-        <div class="terminal-two-column">
-          <div class="stack-form compact-form">
-            <h3>Product details</h3>
-            <label>Name<input data-product-name="${product.id}" value="${escapeHtml(product.name)}"></label>
-            <label>Category<input data-product-category="${product.id}" value="${escapeHtml(product.category)}"></label>
-            <label>Description<textarea data-product-description="${product.id}">${escapeHtml(product.description)}</textarea></label>
-            <div class="form-grid">
-              <label>Status<select data-product-status="${product.id}">
-                <option value="draft" ${product.status === "draft" ? "selected" : ""}>Draft</option>
-                <option value="active" ${product.status === "active" ? "selected" : ""}>Active</option>
-                <option value="archived" ${product.status === "archived" ? "selected" : ""}>Archived</option>
-              </select></label>
-              <label class="switch-line"><input type="checkbox" data-product-rare="${product.id}" ${product.is_rare ? "checked" : ""}> Limited / rare</label>
-            </div>
-            <button class="primary-button" type="button" data-save-product="${product.id}">Save details</button>
-          </div>
-
-          <div>
-            <h3>Product photos</h3>
-            <div class="terminal-media-grid">
-              ${media.map((m) => `<figure class="terminal-media-card">
-                <img src="${escapeHtml(m.public_url || "")}" alt="${escapeHtml(m.alt_text)}">
-                <figcaption><span>${escapeHtml(m.alt_text)}</span><button class="table-action danger-action" type="button" data-delete-media="${m.id}" data-storage-path="${escapeHtml(m.storage_path)}">Remove</button></figcaption>
-              </figure>`).join("") || "<p>No photos yet.</p>"}
-            </div>
+        <div class="terminal-workspace">
+          <section class="product-control-card">
+            <div class="terminal-section-heading"><div><h3>Product details</h3><p>Customer-facing information and shipping weight.</p></div></div>
             <div class="stack-form compact-form">
+              <label>Name<input data-product-name="${product.id}" value="${escapeHtml(product.name)}"></label>
+              <div class="form-grid">
+                <label>Category<input data-product-category="${product.id}" value="${escapeHtml(product.category)}"></label>
+                <label>Status<select data-product-status="${product.id}">
+                  <option value="draft" ${product.status === "draft" ? "selected" : ""}>Draft</option>
+                  <option value="active" ${product.status === "active" ? "selected" : ""}>Active</option>
+                  <option value="archived" ${product.status === "archived" ? "selected" : ""}>Archived</option>
+                </select></label>
+              </div>
+              <label>Description<textarea data-product-description="${product.id}">${escapeHtml(product.description)}</textarea></label>
+              <div class="weight-unit-row">
+                <label>Item weight<input type="number" min="0.001" step="0.001" data-product-weight="${product.id}" value="${displayWeight.value}"></label>
+                <label>Unit<select data-product-weight-unit="${product.id}"><option value="g" ${displayWeight.unit === "g" ? "selected" : ""}>grams</option><option value="kg" ${displayWeight.unit === "kg" ? "selected" : ""}>kilograms</option></select></label>
+              </div>
+              <small class="field-help">Enter the weight of one item. Package dimensions are managed once under Store settings.</small>
+              <label class="product-rare-toggle"><input type="checkbox" data-product-rare="${product.id}" ${product.is_rare ? "checked" : ""}><span>Limited / rare item</span></label>
+              <button class="primary-button" type="button" data-save-product="${product.id}">Save product details</button>
+            </div>
+          </section>
+
+          <section class="product-control-card">
+            <div class="terminal-section-heading"><div><h3>Product photos</h3><p>Add or remove storefront images.</p></div></div>
+            <div class="terminal-media-grid">
+              ${media.map((item) => `<figure class="terminal-media-card">
+                <img src="${escapeHtml(item.public_url || "")}" alt="${escapeHtml(item.alt_text)}">
+                <figcaption><span>${escapeHtml(item.alt_text)}</span><button class="table-action danger-action" type="button" data-delete-media="${item.id}" data-storage-path="${escapeHtml(item.storage_path)}">Remove</button></figcaption>
+              </figure>`).join("") || '<p class="muted-copy">No photos yet.</p>'}
+            </div>
+            <div class="stack-form compact-form product-photo-upload">
               <label>Add photos<input type="file" accept="image/*" multiple data-image-files="${product.id}"></label>
               <label>Photo description<input data-image-alt="${product.id}" placeholder="Black hoodie front view"></label>
               <button class="table-action" type="button" data-upload-product-images="${product.id}" data-vendor-id="${product.vendor_id}">Upload photos</button>
             </div>
-          </div>
+          </section>
         </div>
 
-        <h3>Sizes, colours, prices and stock</h3>
-        <div class="table-scroll"><table class="data-table">
-          <thead><tr><th>Size</th><th>Colour</th><th>SKU</th><th>Price</th><th>Stock</th><th>Active</th><th>Actions</th></tr></thead>
-          <tbody>${variants.map((v) => `<tr>
-            <td>${escapeHtml(v.size)}</td>
-            <td>${escapeHtml(v.colour)}</td>
-            <td><small>${escapeHtml(v.sku)}</small></td>
-            <td><input class="mini-field" type="number" min="1" step=".01" value="${(Number(v.price_cents)/100).toFixed(2)}" data-price="${v.id}"></td>
-            <td><input class="mini-field" type="number" min="0" step="1" value="${Number(v.stock_quantity)}" data-stock="${v.id}"></td>
-            <td><input type="checkbox" ${v.active ? "checked" : ""} data-active="${v.id}"></td>
-            <td><button class="table-action" type="button" data-save-variant="${v.id}">Save variant</button> <button class="table-action" type="button" data-save-stock="${v.id}">Set stock</button></td>
-          </tr>`).join("")}</tbody>
-        </table></div>
+        <section class="inventory-section">
+          <div class="terminal-section-heading"><div><h3>Sizes, colours, prices and stock</h3><p>Update price/status separately from physical stock.</p></div></div>
+          <div class="inventory-list">
+            ${variants.map((variant) => `<article class="inventory-row">
+              <div class="inventory-identity"><strong>${escapeHtml(variant.size)} · ${escapeHtml(variant.colour)}</strong><small>${escapeHtml(variant.sku)}</small></div>
+              <label>Price (R)<input type="number" min="1" step=".01" value="${(Number(variant.price_cents)/100).toFixed(2)}" data-price="${variant.id}"></label>
+              <label>Stock<input type="number" min="0" step="1" value="${Number(variant.stock_quantity)}" data-stock="${variant.id}"></label>
+              <label class="variant-active-toggle"><input type="checkbox" ${variant.active ? "checked" : ""} data-active="${variant.id}"><span>Active</span></label>
+              <div class="inventory-actions"><button class="table-action" type="button" data-save-variant="${variant.id}">Save price / status</button><button class="table-action" type="button" data-save-stock="${variant.id}">Update stock</button></div>
+            </article>`).join("") || '<p class="muted-copy">No variants yet.</p>'}
+          </div>
+        </section>
 
-        <div class="terminal-add-variant">
-          <h3>Add another size / colour</h3>
-          <div class="form-grid">
+        <section class="terminal-add-variant">
+          <div class="terminal-section-heading"><div><h3>Add another size / colour</h3><p>The new variant uses this product's item weight.</p></div></div>
+          <div class="variant-create-grid">
             <label>Size<input data-new-size="${product.id}" placeholder="XL"></label>
             <label>Colour<input data-new-colour="${product.id}" placeholder="Black"></label>
-          </div>
-          <div class="form-grid">
             <label>Price (R)<input type="number" min="1" step=".01" data-new-price="${product.id}" value="${variants.length ? (Number(variants[0].price_cents)/100).toFixed(2) : "2.00"}"></label>
             <label>Starting stock<input type="number" min="0" step="1" data-new-stock="${product.id}" value="0"></label>
           </div>
           <button class="table-action" type="button" data-add-variant="${product.id}">Add variant</button>
-        </div>
+        </section>
 
         <div class="terminal-danger-zone">
           <div><strong>Removal</strong><p>Archive sold products. Permanent delete is only allowed when the item has never been ordered.</p></div>
@@ -591,13 +611,14 @@ async function renderProducts() {
           <label>Price (R)<input name="price_rand" type="number" min="1" step=".01" value="2.00" required></label>
           <label>Starting stock per variant<input name="stock_quantity" type="number" min="0" step="1" value="0" required></label>
         </div>
-        <div class="form-grid">
-          <label>Weight kg<input name="weight_kg" type="number" min=".01" step=".01" value=".35" required></label>
-          <label>Dimensions LxWxH cm<input name="dimensions" value="42x32x6" pattern="[0-9.]+x[0-9.]+x[0-9.]+" required></label>
+        <div class="weight-unit-row">
+          <label>Item weight<input name="item_weight" type="number" min="0.001" step="0.001" value="250" required></label>
+          <label>Unit<select name="weight_unit"><option value="g" selected>grams</option><option value="kg">kilograms</option></select></label>
         </div>
+        <small class="field-help">Weight is stored internally in kilograms. Your standard box is configured under Store settings.</small>
         <div class="form-grid">
           <label>Status<select name="status"><option value="draft">Draft</option><option value="active">Active</option></select></label>
-          <label class="switch-line"><input name="is_rare" type="checkbox"> Limited / rare</label>
+          <label class="product-rare-toggle"><input name="is_rare" type="checkbox"><span>Limited / rare item</span></label>
         </div>
         <label>Product photos<input name="images" type="file" accept="image/*" multiple></label>
         <button class="primary-button">Create product</button><p class="form-message"></p>
@@ -609,12 +630,12 @@ async function renderProducts() {
 async function createProduct(form) {
   const fd = new FormData(form);
   const values = Object.fromEntries(fd);
-  const sizes = [...new Set([...fd.getAll("sizes"), ...listValues(values.custom_sizes)].map((v) => String(v).trim()).filter(Boolean))];
+  const sizes = [...new Set([...fd.getAll("sizes"), ...listValues(values.custom_sizes)].map((value) => String(value).trim()).filter(Boolean))];
   const colours = listValues(values.colours);
   if (!sizes.length) throw new Error("Choose at least one size.");
   if (!colours.length) throw new Error("Add at least one colour.");
+  const weightKg = weightToKg(values.item_weight, values.weight_unit);
 
-  const [lengthCm,widthCm,heightCm] = String(values.dimensions).toLowerCase().split("x").map(Number);
   const { data: productId, error } = await supabase.rpc("save_product_v2", {
     p_vendor_id: values.vendor_id,
     p_name: values.name.trim(),
@@ -624,10 +645,10 @@ async function createProduct(form) {
     p_sizes: sizes,
     p_colours: colours,
     p_stock_quantity: Number(values.stock_quantity),
-    p_weight_kg: Number(values.weight_kg),
-    p_length_cm: lengthCm,
-    p_width_cm: widthCm,
-    p_height_cm: heightCm,
+    p_weight_kg: weightKg,
+    p_length_cm: 1,
+    p_width_cm: 1,
+    p_height_cm: 1,
     p_is_rare: values.is_rare === "on",
     p_status: values.status,
   });
@@ -638,9 +659,7 @@ async function createProduct(form) {
 
   toast(`Product created with ${sizes.length * colours.length} variants.`);
   renderProducts();
-}
-
-/* 06. ORDER AND RETURN MANAGEMENT                                            */
+}/* 06. ORDER AND RETURN MANAGEMENT                                            */
 /* ========================================================================== */
 async function renderOrders() {
   const query = supabase.from("vendor_orders").select("id,public_reference,vendor_id,fulfilment_status,merchandise_total_cents,shipping_charge_cents,commission_total_cents,created_at,orders(customer_name,customer_email),vendors(business_name)").order("created_at", { ascending: false }).limit(150);
@@ -673,14 +692,58 @@ async function renderSettings() {
     content.innerHTML = `${header("PLATFORM RULES", "Settings", "Controls stored in the database and protected by operator RLS.")}<section class="dashboard-panel"><form class="stack-form dashboard-form" data-form="admin-settings"><div class="form-grid"><label>Default commission percent<input name="default_commission" type="number" min="0" max="40" step=".1" value="${Number(value("default_commission_rate_bps",1000))/100}"></label><label>Stock reservation minutes<input name="reservation_minutes" type="number" min="5" max="60" value="${Number(value("stock_reservation_minutes",15))}"></label></div><div class="form-grid"><label>First reminder hours<input name="reminder_hours" type="number" min="1" value="${Number(value("fulfilment_reminder_hours",24))}"></label><label>Escalation hours<input name="escalation_hours" type="number" min="2" value="${Number(value("fulfilment_escalation_hours",72))}"></label></div><button class="primary-button">Save platform settings</button><p class="form-message"></p></form></section>`;
     return;
   }
-  const { data: privateRow, error } = await supabase.from("vendor_private_settings").select("contact_email,contact_phone,collection_street_address,collection_city,collection_province,collection_postal_code").eq("vendor_id", state.currentVendorId).maybeSingle();
+
+  const { data: privateRow, error } = await supabase.from("vendor_private_settings")
+    .select("contact_email,contact_phone,collection_street_address,collection_local_area,collection_city,collection_province,collection_postal_code,package_length_cm,package_width_cm,package_height_cm,package_tare_weight_kg,package_item_capacity")
+    .eq("vendor_id", state.currentVendorId).maybeSingle();
   if (error) throw error;
   const settings = privateRow || {};
-  content.innerHTML = `${header("STORE SETTINGS", "Collection and contact", "Courier quotes depend on a complete physical collection address.")}<section class="dashboard-panel"><form class="stack-form dashboard-form" data-form="vendor-settings"><div class="form-grid"><label>Contact email<input name="contact_email" type="email" value="${escapeHtml(settings.contact_email || "")}" required></label><label>Contact phone<input name="contact_phone" value="${escapeHtml(settings.contact_phone || "")}" required></label></div><label>Collection street address<input name="collection_street_address" value="${escapeHtml(settings.collection_street_address || "")}" required></label><div class="form-grid"><label>Collection city<input name="collection_city" value="${escapeHtml(settings.collection_city || "Polokwane")}" required></label><label>Postal code<input name="collection_postal_code" value="${escapeHtml(settings.collection_postal_code || "0700")}" required></label></div><label>Province<input name="collection_province" value="${escapeHtml(settings.collection_province || "Limpopo")}" required></label><button class="primary-button">Save store settings</button><p class="form-message"></p></form></section>`;
-}
+  const tareKg = Math.max(0, Number(settings.package_tare_weight_kg || 0));
+  const packageWeight = tareKg < 1 ? { value: Math.round(tareKg * 1000), unit: "g" } : { value: Number(tareKg.toFixed(3)), unit: "kg" };
 
-/* ========================================================================== */
-/* 08. MUTATION HANDLERS                                                      */
+  content.innerHTML = `${header("STORE SETTINGS", "Collection and shipping", "Set the address couriers collect from and the standard package used for live delivery quotes.")}
+    <section class="dashboard-panel">
+      <form class="stack-form dashboard-form" data-form="vendor-settings">
+        <div class="terminal-section-heading"><div><h2>Collection and contact</h2><p>The courier will use these details when collecting an order.</p></div></div>
+        <div class="form-grid"><label>Contact email<input name="contact_email" type="email" value="${escapeHtml(settings.contact_email || "")}" required></label><label>Contact phone<input name="contact_phone" value="${escapeHtml(settings.contact_phone || "")}" required></label></div>
+        <label>Collection street address<input name="collection_street_address" value="${escapeHtml(settings.collection_street_address || "")}" required></label>
+        <div class="form-grid"><label>Area / suburb<input name="collection_local_area" value="${escapeHtml(settings.collection_local_area || "")}"></label><label>Collection city<input name="collection_city" value="${escapeHtml(settings.collection_city || "Polokwane")}" required></label></div>
+        <div class="form-grid"><label>Province<input name="collection_province" value="${escapeHtml(settings.collection_province || "Limpopo")}" required></label><label>Postal code<input name="collection_postal_code" value="${escapeHtml(settings.collection_postal_code || "0700")}" required></label></div>
+
+        <section class="package-settings-card">
+          <div class="terminal-section-heading"><div><h2>Standard shipping package</h2><p>Measure the outside of the box or mailer you normally send. Kompo Nation will reuse it until you change it.</p></div></div>
+          <div class="package-dim-grid">
+            <label>Length (cm)<input name="package_length_cm" type="number" min="1" step="0.1" value="${escapeHtml(settings.package_length_cm ?? "")}" required></label>
+            <label>Width (cm)<input name="package_width_cm" type="number" min="1" step="0.1" value="${escapeHtml(settings.package_width_cm ?? "")}" required></label>
+            <label>Height (cm)<input name="package_height_cm" type="number" min="1" step="0.1" value="${escapeHtml(settings.package_height_cm ?? "")}" required></label>
+          </div>
+          <div class="form-grid package-secondary-grid">
+            <div class="weight-unit-row"><label>Empty packaging weight<input name="package_tare_weight" type="number" min="0" step="0.001" value="${packageWeight.value}"></label><label>Unit<select name="package_tare_weight_unit"><option value="g" ${packageWeight.unit === "g" ? "selected" : ""}>grams</option><option value="kg" ${packageWeight.unit === "kg" ? "selected" : ""}>kilograms</option></select></label></div>
+            <label>Items per package<input name="package_item_capacity" type="number" min="1" max="50" step="1" value="${Number(settings.package_item_capacity || 3)}" required><small>Example: 3 means 1–3 shirts use one box; 4–6 use two.</small></label>
+          </div>
+          <div class="package-preview" data-package-preview>Enter the three dimensions to calculate volumetric weight.</div>
+          <small class="field-help">Volumetric weight = length × width × height ÷ 4000. Bob Go still receives the actual packed weight as well.</small>
+        </section>
+
+        <button class="primary-button">Save store settings</button><p class="form-message"></p>
+      </form>
+    </section>`;
+
+  const form = content.querySelector('[data-form="vendor-settings"]');
+  const updatePreview = () => {
+    const length = Number(form.elements.package_length_cm.value);
+    const width = Number(form.elements.package_width_cm.value);
+    const height = Number(form.elements.package_height_cm.value);
+    const preview = form.querySelector("[data-package-preview]");
+    if ([length,width,height].every((value) => Number.isFinite(value) && value > 0)) {
+      preview.textContent = `Estimated volumetric weight: ${(length * width * height / 4000).toFixed(2)} kg per package`;
+    } else {
+      preview.textContent = "Enter the three dimensions to calculate volumetric weight.";
+    }
+  };
+  form.addEventListener("input", updatePreview);
+  updatePreview();
+}/* 08. MUTATION HANDLERS                                                      */
 /* ========================================================================== */
 async function handlePortalClick(event) {
   const openView = event.target.closest("[data-open-view]");
@@ -814,6 +877,10 @@ const manageProduct = event.target.closest("[data-manage-product]");
   const saveProduct = event.target.closest("[data-save-product]");
   if (saveProduct) {
     const id = saveProduct.dataset.saveProduct;
+    const itemWeightKg = weightToKg(
+      document.querySelector(`[data-product-weight="${CSS.escape(id)}"]`).value,
+      document.querySelector(`[data-product-weight-unit="${CSS.escape(id)}"]`).value
+    );
     const { error } = await supabase.rpc("update_product_details", {
       p_product_id: id,
       p_name: document.querySelector(`[data-product-name="${CSS.escape(id)}"]`).value,
@@ -823,7 +890,9 @@ const manageProduct = event.target.closest("[data-manage-product]");
       p_status: document.querySelector(`[data-product-status="${CSS.escape(id)}"]`).value,
     });
     if (error) return toast(error.message);
-    toast("Product details saved.");
+    const { error: weightError } = await supabase.from("product_variants").update({ weight_kg:itemWeightKg, updated_at:new Date().toISOString() }).eq("product_id",id);
+    if (weightError) return toast(weightError.message);
+    toast("Product details and item weight saved.");
     return renderProducts();
   }
 
@@ -858,9 +927,13 @@ const manageProduct = event.target.closest("[data-manage-product]");
     const colour = document.querySelector(`[data-new-colour="${CSS.escape(id)}"]`).value.trim();
     const price = Number(document.querySelector(`[data-new-price="${CSS.escape(id)}"]`).value);
     const stock = Number(document.querySelector(`[data-new-stock="${CSS.escape(id)}"]`).value);
+    const itemWeightKg = weightToKg(
+      document.querySelector(`[data-product-weight="${CSS.escape(id)}"]`).value,
+      document.querySelector(`[data-product-weight-unit="${CSS.escape(id)}"]`).value
+    );
     const { error } = await supabase.rpc("add_product_variant", {
       p_product_id:id,p_size:size,p_colour:colour,p_price_cents:Math.round(price*100),p_stock_quantity:stock,
-      p_weight_kg:.35,p_length_cm:42,p_width_cm:32,p_height_cm:6
+      p_weight_kg:itemWeightKg,p_length_cm:1,p_width_cm:1,p_height_cm:1
     });
     if (error) return toast(error.message);
     toast("Variant added.");
@@ -983,10 +1056,28 @@ async function handlePortalSubmit(event) {
     if (form.dataset.form === "store") await createStore(form);
     if (form.dataset.form === "product") await createProduct(form);
     if (form.dataset.form === "vendor-settings") {
-      const values = Object.fromEntries(new FormData(form));
+      const raw = Object.fromEntries(new FormData(form));
+      const values = {
+        contact_email: String(raw.contact_email || "").trim(),
+        contact_phone: String(raw.contact_phone || "").trim(),
+        collection_street_address: String(raw.collection_street_address || "").trim(),
+        collection_local_area: String(raw.collection_local_area || "").trim(),
+        collection_city: String(raw.collection_city || "").trim(),
+        collection_province: String(raw.collection_province || "").trim(),
+        collection_postal_code: String(raw.collection_postal_code || "").trim(),
+        package_length_cm: Number(raw.package_length_cm),
+        package_width_cm: Number(raw.package_width_cm),
+        package_height_cm: Number(raw.package_height_cm),
+        package_tare_weight_kg: weightToKg(raw.package_tare_weight, raw.package_tare_weight_unit, true),
+        package_item_capacity: Number(raw.package_item_capacity),
+        updated_at: new Date().toISOString(),
+      };
+      if (![values.package_length_cm,values.package_width_cm,values.package_height_cm].every((value) => Number.isFinite(value) && value > 0)) throw new Error("Enter valid standard package dimensions.");
+      if (!Number.isInteger(values.package_item_capacity) || values.package_item_capacity < 1) throw new Error("Items per package must be a whole number of at least 1.");
       const { error } = await supabase.from("vendor_private_settings").update(values).eq("vendor_id", state.currentVendorId);
       if (error) throw error;
-      toast("Store settings saved.");
+      toast("Store and shipping settings saved.");
+      return renderSettings();
     }
     if (form.dataset.form === "admin-settings") {
       const values = Object.fromEntries(new FormData(form));

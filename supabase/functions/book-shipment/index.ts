@@ -1,4 +1,4 @@
-﻿import {
+import {
   authenticatedUser,
   json,
   preflight,
@@ -16,6 +16,40 @@ function mapAddress(address: any) {
     country: address?.country || "ZA",
     code: address?.postalCode || "",
   };
+}
+
+// STANDARD_PACKAGE_SHIPPING_V1
+function buildBookedParcels(orderItems: any[], settings: any, reference: string) {
+  const length = Number(settings?.package_length_cm);
+  const width = Number(settings?.package_width_cm);
+  const height = Number(settings?.package_height_cm);
+  const tare = Math.max(0, Number(settings?.package_tare_weight_kg || 0));
+  const capacity = Math.max(1, Math.floor(Number(settings?.package_item_capacity || 3)));
+  if (![length,width,height].every((value) => Number.isFinite(value) && value > 0)) throw new Error("Set the store's standard shipping package dimensions before booking collection.");
+
+  const units: any[] = [];
+  for (const item of orderItems || []) {
+    const variant = Array.isArray(item.product_variants) ? item.product_variants[0] : item.product_variants;
+    const weightKg = Number(variant?.weight_kg);
+    const quantity = Math.max(0, Math.floor(Number(item.quantity || 0)));
+    if (!Number.isFinite(weightKg) || weightKg <= 0) throw new Error(`${item.product_name || "An item"} needs a valid item weight before collection can be booked.`);
+    for (let index = 0; index < quantity; index += 1) units.push({ name:item.product_name, sku:item.sku, weightKg });
+  }
+
+  const parcels: any[] = [];
+  for (let start = 0; start < units.length; start += capacity) {
+    const chunk = units.slice(start, start + capacity);
+    const names = [...new Set(chunk.map((unit) => unit.name))].join(", ");
+    parcels.push({
+      description: `${chunk.length} item${chunk.length === 1 ? "" : "s"}: ${names}`.slice(0, 180),
+      submitted_length_cm: length,
+      submitted_width_cm: width,
+      submitted_height_cm: height,
+      submitted_weight_kg: Number((tare + chunk.reduce((sum, unit) => sum + unit.weightKg, 0)).toFixed(3)),
+      custom_parcel_reference: `${reference}-P${parcels.length + 1}`,
+    });
+  }
+  return parcels;
 }
 
 Deno.serve(async (request: Request) => {
@@ -70,7 +104,7 @@ Deno.serve(async (request: Request) => {
       "collection_local_area,collection_city," +
       "collection_province," +
       "collection_postal_code," +
-      "collection_country_code))," +
+      "collection_country_code,package_length_cm,package_width_cm,package_height_cm,package_tare_weight_kg,package_item_capacity))," +
       "orders(customer_name,customer_email," +
       "customer_phone,delivery_address)," +
       "order_items(quantity,product_name,sku," +
@@ -152,41 +186,7 @@ Deno.serve(async (request: Request) => {
     const quote =
       order.shipping_quote || {};
 
-    const parcels = (
-      order.order_items || []
-    ).map((item: any) => {
-      const variant =
-        Array.isArray(item.product_variants)
-          ? item.product_variants[0]
-          : item.product_variants;
-
-      if (!variant) {
-        throw new Error(
-          `Parcel dimensions are missing for ${item.product_name}.`,
-        );
-      }
-
-      return {
-        description:
-          `${item.product_name} × ${item.quantity}`,
-
-        submitted_length_cm:
-          Number(variant.length_cm),
-
-        submitted_width_cm:
-          Number(variant.width_cm),
-
-        submitted_height_cm:
-          Number(variant.height_cm),
-
-        submitted_weight_kg:
-          Number(variant.weight_kg) *
-          Number(item.quantity),
-
-        custom_parcel_reference:
-          item.sku,
-      };
-    });
+    const parcels = buildBookedParcels(order.order_items, privateSettings, order.public_reference || vendorOrderId);
 
     const payload = {
       collection_address: mapAddress({
