@@ -356,84 +356,86 @@ Deno.serve(async (request: Request) => {
         if (!response.ok) {
           throw new Error(
             rates?.message ||
-              `Courier rates failed for ${vendor.business_name}.`,
+            rates?.error ||
+            `Courier rates failed for ${vendor.business_name}.`
           );
         }
 
-        const availableRates =
-          Array.isArray(rates)
-            ? rates
-            : Array.isArray(rates?.rates)
-            ? rates.rates
-            : [];
+        const rateOptions = (Array.isArray(rates?.provider_rate_requests)
+          ? rates.provider_rate_requests
+          : [])
+          .flatMap((providerRequest: any) => {
+            if (providerRequest?.status !== "success") return [];
 
-        const rate = availableRates
-          .map(
-            (
-              item: any,
-              index: number,
-            ) => ({
-              rateId: String(
-                item.id ||
-                  `${
-                    item.provider_slug ||
-                    "courier"
-                  }-${index}`,
-              ),
+            const providerSlug = String(providerRequest?.provider_slug || "");
+            const courierName = String(
+              providerRequest?.provider_name ||
+              providerRequest?.provider_slug ||
+              "Courier"
+            );
 
-              serviceLevelCode:
-                String(
-                  item.service_level_code ||
-                    item.service_level_id ||
-                    "ECO",
+            return (Array.isArray(providerRequest?.responses)
+              ? providerRequest.responses
+              : [])
+              .filter((service: any) =>
+                service?.status === "success" &&
+                Number(service?.rate_amount) > 0
+              )
+              .map((service: any) => ({
+                rateId:
+                  `${providerRequest?.rate_response_id || providerSlug}:${service?.service_level_code || "service"}`,
+                serviceLevelCode: String(
+                  service?.service_level_code || ""
                 ),
-
-              providerSlug:
-                String(
-                  item.provider_slug ||
-                    item.provider ||
-                    "",
+                providerSlug,
+                courierName,
+                serviceName: String(
+                  service?.service_level?.name ||
+                  service?.service_level_name ||
+                  service?.service_level_code ||
+                  "Courier delivery"
                 ),
-
-              courierName:
-                String(
-                  item.provider_name ||
-                    item.courier_name ||
-                    item.provider_slug ||
-                    "Courier",
+                amountCents: Math.round(
+                  Number(service?.rate_amount || 0) * 100
                 ),
-
-              serviceName:
-                String(
-                  item.service_level_name ||
-                    item.service_name ||
-                    "Courier delivery",
-                ),
-
-              amountCents:
-                Math.round(
-                  Number(
-                    item.rate ||
-                      item.total ||
-                      item.amount ||
-                      0,
-                  ) * 100,
-                ),
-            }),
-          )
-          .filter(
-            (item: any) =>
-              item.amountCents > 0,
+              }));
+          })
+          .filter((item: any) =>
+            item.providerSlug &&
+            item.serviceLevelCode &&
+            item.amountCents > 0
           )
           .sort(
             (a: any, b: any) =>
-              a.amountCents -
-              b.amountCents,
-          )[0];
+              a.amountCents - b.amountCents
+          );
+
+        const rate = rateOptions[0];
 
         if (!rate) {
+          const providerFailures = (
+            Array.isArray(rates?.provider_rate_requests)
+              ? rates.provider_rate_requests
+              : []
+          )
+            .filter((item: any) => item?.failed_reason)
+            .map(
+              (item: any) =>
+                `${item.provider_name || item.provider_slug}: ${item.failed_reason}`
+            );
+
+          console.error(
+            "BOBGO_NO_USABLE_RATE",
+            JSON.stringify({
+              providerCount: Array.isArray(rates?.provider_rate_requests)
+                ? rates.provider_rate_requests.length
+                : 0,
+              failures: providerFailures,
+            })
+          );
+
           throw new Error(
-            `No courier service is available for ${vendor.business_name}.`,
+            `No courier service is available for ${vendor.business_name}.`
           );
         }
 
