@@ -476,10 +476,15 @@ Deno.serve(
           ? order.splits
           : [];
 
+      // VENDOR_LIABILITY_RECOVERY_V1
+      const recoveryPlan = await rpc("reserve_vendor_liability_recoveries",{p_order_id:order.orderId});
+      const recoveryBySubaccount = new Map((Array.isArray(recoveryPlan)?recoveryPlan:[]).map((x:any)=>[String(x?.subaccount||""),Math.max(0,Number(x?.deductionCents||0))]));
+      const adjustedSplits = splits.map((s:any)=>({...s,share:Math.max(0,Number(s?.share||0)-(recoveryBySubaccount.get(String(s?.subaccount||""))||0))})).filter((s:any)=>s.subaccount&&Number(s.share)>0);
+
       // Dynamic flat split:
       // outside vendors receive their vendor-net merchandise.
       // Kompo retains commission + delivery + platform-owned sales.
-      if (splits.length) {
+      if (adjustedSplits.length) {
         paystackBody.split = {
           type: "flat",
 
@@ -487,7 +492,7 @@ Deno.serve(
             "account",
 
           subaccounts:
-            splits.map(
+            adjustedSplits.map(
               (split: any) => ({
                 subaccount:
                   split

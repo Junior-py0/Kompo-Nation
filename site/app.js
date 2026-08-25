@@ -1084,6 +1084,7 @@ function renderCart() {
 let pendingCheckoutReview = null;
 
 async function renderCheckout() {
+  if (restoreLegalCheckout()) return;
   pendingCheckoutReview = null;
 
   if (!state.session) {
@@ -1864,14 +1865,10 @@ async function beginCheckout(event) {
           I agree to the
           <a
             href="/terms"
-            target="_blank"
-            rel="noopener"
           >Terms of Service</a>,
           acknowledge the
           <a
             href="/privacy"
-            target="_blank"
-            rel="noopener"
           >Privacy Policy</a>
           and accept the delivery charges shown
           above.
@@ -2555,77 +2552,20 @@ async function renderAccountView(
   }
 
   if (view === "returns") {
-    const { data, error } =
-      await supabase
-        .from("returns")
-        .select(
-          "public_reference,reason,status,refund_amount_cents,requested_at"
-        )
-        .order(
-          "requested_at",
-          { ascending: false }
-        );
-
-    if (error) {
-      throw error;
-    }
-
-    panel.innerHTML = `
-      <p class="eyebrow">
-        AFTER-SALES
-      </p>
-
-      <h1>Returns.</h1>
-
-      ${
-        data.length
-          ? data.map((item) => `
-              <article class="order-card">
-                <div>
-                  <strong>
-                    ${publicReference(item.public_reference)}
-                  </strong>
-
-                  <p>
-                    ${
-                      escapeHtml(
-                        item.reason.replaceAll("_", " ")
-                      )
-                    }
-                    ·
-                    ${money(item.refund_amount_cents)}
-                  </p>
-                </div>
-
-                <span class="status-pill">
-                  ${
-                    escapeHtml(
-                      item.status.replaceAll("_", " ")
-                    )
-                  }
-                </span>
-              </article>
-            `).join("")
-          : `
-            <p>
-              No return requests are attached
-              to this account.
-            </p>
-          `
-      }
-
-      <p>
-        <small>
-          Start a return from an eligible
-          delivered order. The full workflow
-          activates with live order data.
-        </small>
-      </p>
-    `;
+    const {data,error}=await supabase.from("returns").select("id,public_reference,resolution_type,reason,exchange_note,responsibility,status,refund_amount_cents,requested_at,return_shipments(id,leg,payer,status,courier_cost_cents,logistics_fee_cents,total_charge_cents,quote_expires_at,courier_name,service_name,tracking_reference,tracking_url)").order("requested_at",{ascending:false});
+    if(error)throw error;
+    panel.innerHTML=`<p class="eyebrow">AFTER-SALES</p><h1>Returns & exchanges.</h1><p>Every courier movement is quoted separately. If the return is your responsibility, payment happens before that courier leg is booked.</p><div class="return-list">${data.length?data.map(r=>{const ships=Array.isArray(r.return_shipments)?r.return_shipments:[];const shipCards=ships.map(s=>{const expired=s.quote_expires_at&&Date.parse(s.quote_expires_at)<=Date.now();const action=s.payer==="customer"&&s.status==="awaiting_payment"?(expired?`<button class="table-action" data-refresh-return="${r.id}" data-return-leg="${s.leg}">Refresh courier quote</button>`:`<button class="primary-button" data-pay-return="${s.id}">Pay ${s.leg==="reverse"?"return delivery":"replacement delivery"}</button>`):"";return `<section class="return-shipment-card"><div><strong>${s.leg==="reverse"?"Return to store":"Replacement delivery"}</strong><p>${escapeHtml(s.courier_name||"Courier")} Â· ${escapeHtml(s.status.replaceAll("_"," "))}</p></div>${s.total_charge_cents!=null?`<div class="return-price-grid"><span>Courier delivery</span><strong>${money(s.courier_cost_cents||0)}</strong><span>Logistics &amp; fulfilment</span><strong>${money(s.logistics_fee_cents||0)}</strong><span>Total delivery</span><strong>${money(s.total_charge_cents||0)}</strong></div>`:""}<div class="return-actions">${action}${s.tracking_url?`<a class="table-action" href="${escapeHtml(s.tracking_url)}" target="_blank" rel="noopener">Track</a>`:""}</div></section>`}).join("");return `<article class="return-card"><div class="return-heading"><div><strong>${publicReference(r.public_reference)}</strong><p>${r.resolution_type==="exchange"?"Exchange":"Refund"} Â· ${escapeHtml(r.reason)}</p></div><span class="status-pill">${escapeHtml(r.status.replaceAll("_"," "))}</span></div>${r.exchange_note?`<p><strong>Replacement:</strong> ${escapeHtml(r.exchange_note)}</p>`:""}${r.responsibility!=="undetermined"?`<p>Logistics responsibility: <strong>${r.responsibility==="vendor"?"Store":r.responsibility==="kompo"?"Kompo Nation":"Customer"}</strong></p>`:"<p>Responsibility is being reviewed.</p>"}${shipCards}${!ships.length&&r.status==="approved"&&r.responsibility==="customer"?`<button class="table-action" data-refresh-return="${r.id}" data-return-leg="reverse">Get return delivery price</button>`:""}</article>`}).join(""):"<p>No return requests yet. Start one from an eligible delivered package.</p>"}</div>`;
+    return;
   }
+
 }
 
+// CUSTOMER_RETURN_V2
+async function returnApi(action,body={}){const res=await fetch(`${CONFIG.functionsBase}/return-logistics`,{method:"POST",headers:{"Content-Type":"application/json",...(await authHeader())},body:JSON.stringify({action,...body})}),x=await res.json();if(!res.ok)throw new Error(x.error||"Return logistics failed.");return x}
+async function openReturnDialog(id){document.querySelector("#return-dialog")?.remove();const d=document.createElement("dialog");d.id="return-dialog";d.className="return-dialog";d.innerHTML=`<form id="return-form" class="return-form"><div class="return-heading"><div><p class="eyebrow">RETURN REQUEST</p><h2>Refund or exchange</h2></div><button type="button" class="quiet-button" id="return-close">Close</button></div><label>Resolution<select name="resolution" id="return-resolution"><option value="refund">Refund</option><option value="exchange">Exchange</option></select></label><label>Reason<select name="reason" required><option value="">Choose a reason</option><option value="wrong_size_ordered">I selected the wrong size</option><option value="change_of_mind">I changed my mind</option><option value="wrong_size_received">The store sent the wrong size</option><option value="wrong_item_received">The store sent the wrong item</option><option value="defective">The item is defective</option><option value="not_as_described">The item is not as described</option><option value="other">Other</option></select></label><label id="exchange-note" hidden>Replacement required<input name="exchange" placeholder="Example: Large / Black"></label><label>Details<textarea name="note" rows="4"></textarea></label><p><small>Return delivery is separate from the original delivery. If you are responsible, you will see and pay the courier + logistics amount before collection is booked. <a href="/returns">Read the return policy.</a></small></p><button class="primary-button" type="submit">Submit return request</button><p class="form-message"></p></form>`;document.body.append(d);const f=d.querySelector("#return-form"),sel=f.elements.resolution,note=d.querySelector("#exchange-note");sel.addEventListener("change",()=>{note.hidden=sel.value!=="exchange";f.elements.exchange.required=sel.value==="exchange"});d.querySelector("#return-close").addEventListener("click",()=>d.close());f.addEventListener("submit",async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(f)),btn=f.querySelector('button[type="submit"]'),msg=f.querySelector(".form-message");btn.disabled=true;const{error}=await supabase.rpc("request_return_v2",{p_vendor_order_id:id,p_resolution_type:v.resolution,p_reason_code:v.reason,p_note:String(v.note||"").trim(),p_exchange_note:String(v.exchange||"").trim()});if(error){msg.textContent=error.message;btn.disabled=false;return}d.close();d.remove();showToast("Return request submitted.");renderAccountView("returns",document.querySelector('[data-account-view="returns"]'))});d.showModal()}
 async function handleAccountAction(event) {
+  const payReturn=event.target.closest("[data-pay-return]");if(payReturn){try{const x=await returnApi("initialize-payment",{returnShipmentId:payReturn.dataset.payReturn});location.href=x.authorizationUrl}catch(e){showToast(e.message)}return}
+  const refreshReturn=event.target.closest("[data-refresh-return]");if(refreshReturn){try{await returnApi(refreshReturn.dataset.returnLeg==="exchange_outbound"?"prepare-exchange":"prepare-reverse",{returnId:refreshReturn.dataset.refreshReturn});showToast("Courier quote updated.");return renderAccountView("returns",document.querySelector('[data-account-view="returns"]'))}catch(e){return showToast(e.message)}}
   const editAddressButton =
     event.target.closest(
       "[data-edit-address]"
@@ -2831,58 +2771,8 @@ async function handleAccountAction(event) {
     );
   }
 
-  const returnButton =
-    event.target.closest(
-      "[data-request-return]"
-    );
-
-  if (returnButton) {
-    const reason =
-      window.prompt(
-        "What is the reason for this return?"
-      );
-
-    if (!reason?.trim()) {
-      return;
-    }
-
-    const note =
-      window.prompt(
-        "Add any details that will help the store review the item."
-      ) || "";
-
-    const { error } =
-      await supabase.rpc(
-        "request_return",
-        {
-          p_vendor_order_id:
-            returnButton.dataset.requestReturn,
-
-          p_reason:
-            reason.trim(),
-
-          p_note:
-            note.trim()
-        }
-      );
-
-    if (error) {
-      return showToast(
-        error.message
-      );
-    }
-
-    showToast(
-      "Return request submitted."
-    );
-
-    return renderAccountView(
-      "returns",
-      document.querySelector(
-        '[data-account-view="returns"]'
-      )
-    );
-  }
+  const returnButton=event.target.closest("[data-request-return]");
+  if(returnButton)return openReturnDialog(returnButton.dataset.requestReturn);
 }
 
 async function saveAddress(event) {
@@ -3444,6 +3334,13 @@ function setupDelegatedEvents() {
 const CURRENT_TERMS_VERSION = "1.0";
 
 
+// LEGAL_RETURN_NAV_V2
+const LEGAL_CTX="kompoLegalContextV2",LEGAL_SNAP="kompoCheckoutLegalSnapshotV2",LEGAL_RESTORE="kompoCheckoutLegalRestoreV2";
+document.addEventListener("click",(e)=>{const x=e.target.closest('a[href="/terms"],a[href="/privacy"],a[href="/returns"]');if(!x)return;let label="Return to home";if(location.pathname==="/checkout")label="Return to order review";else if(location.pathname==="/account")label="Return to your account";else if(location.pathname!=="/")label="Go back";sessionStorage.setItem(LEGAL_CTX,JSON.stringify({path:location.pathname+location.search,label}));if(location.pathname==="/checkout"&&pendingCheckoutReview)sessionStorage.setItem(LEGAL_SNAP,JSON.stringify({pending:pendingCheckoutReview,html:app.innerHTML}));});
+function legalContext(){try{return JSON.parse(sessionStorage.getItem(LEGAL_CTX)||"null")}catch{return null}}
+function returnFromLegal(){const c=legalContext();if(c?.path?.startsWith("/checkout"))sessionStorage.setItem(LEGAL_RESTORE,"1");if(history.length>1){history.back();return}location.href=c?.path||"/"}
+function legalReturnButton(){const c=legalContext();return `<section class="legal-return-panel"><button class="primary-button" id="legal-return-button" type="button">${escapeHtml(c?.label||"Return to home")}</button></section>`}
+function restoreLegalCheckout(){if(sessionStorage.getItem(LEGAL_RESTORE)!=="1")return false;sessionStorage.removeItem(LEGAL_RESTORE);let s=null;try{s=JSON.parse(sessionStorage.getItem(LEGAL_SNAP)||"null")}catch{}sessionStorage.removeItem(LEGAL_SNAP);const expiries=(s?.pending?.quotes||[]).map(q=>Date.parse(q?.expiresAt||"")).filter(Number.isFinite);if(!s?.pending||!s?.html||!expiries.length||Math.min(...expiries)<=Date.now())return false;pendingCheckoutReview=s.pending;app.innerHTML=s.html;document.querySelector("#continue-secure-payment")?.addEventListener("click",continueCheckoutToPayment);document.querySelector("#change-delivery-details")?.addEventListener("click",()=>renderCheckout());return true}
 const KOMPO_LEGAL_PAGES = {
 
   terms: {
@@ -4449,8 +4346,10 @@ function renderLegalPage(kind) {
 
       </div>
 
+    ${legalReturnButton()}
     </section>
   `;
+  document.querySelector("#legal-return-button")?.addEventListener("click",returnFromLegal);
 }
 
 

@@ -1088,13 +1088,23 @@ async function renderOrders() {
   }
 }
 
-async function renderReturns() {
-  const query = supabase.from("returns").select("id,public_reference,vendor_id,reason,status,refund_amount_cents,requested_at,vendors(business_name),profiles(full_name)").order("requested_at", { ascending: false }).limit(100);
-  const { data: returns, error } = area === "vendor" ? await query.eq("vendor_id", state.currentVendorId) : await query;
-  if (error) throw error;
-  content.innerHTML = `${header("AFTER-SALES", "Returns", "Review submitted requests, received items and recorded refund outcomes.")}<section class="dashboard-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>Return</th><th>Store</th><th>Customer</th><th>Reason</th><th>Value</th><th>Status</th><th>Move</th></tr></thead><tbody>${returns.map((item) => { const vendor = Array.isArray(item.vendors) ? item.vendors[0] : item.vendors; const customer = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles; const actions = item.status === "requested" ? `<button class="table-action" data-return-status="${item.id}" data-next-status="approved">Approve</button> <button class="table-action" data-return-status="${item.id}" data-next-status="declined">Decline</button>` : ["approved","in_transit"].includes(item.status) ? `<button class="table-action" data-return-status="${item.id}" data-next-status="received">Mark received</button>` : item.status === "received" && state.isAdmin ? `<button class="table-action" data-return-status="${item.id}" data-next-status="refunded">Confirm refunded</button>` : "—"; return `<tr><td><strong>${escapeHtml(item.public_reference)}</strong></td><td>${escapeHtml(vendor?.business_name)}</td><td>${escapeHtml(customer?.full_name || "Customer")}</td><td>${escapeHtml(item.reason.replaceAll("_", " "))}</td><td>${money(item.refund_amount_cents)}</td><td><span class="status-pill">${escapeHtml(item.status.replaceAll("_", " "))}</span></td><td>${actions}</td></tr>`; }).join("")}</tbody></table></div></section>`;
+// RETURN_MANAGEMENT_V2
+async function portalReturnApi(action,body={}){const{data:{session}}=await supabase.auth.getSession();if(!session)throw new Error("Sign in again.");const res=await fetch(`${CONFIG.functionsBase}/return-logistics`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({action,...body})}),x=await res.json();if(!res.ok)throw new Error(x.error||"Return logistics failed.");return x}
+async function renderReturns(){
+ const select="id,public_reference,vendor_id,resolution_type,reason,customer_note,exchange_note,claimed_responsibility,responsibility,status,requested_at,vendors(business_name),profiles(full_name),return_shipments(id,leg,payer,status,courier_cost_cents,logistics_fee_cents,total_charge_cents,courier_name,tracking_url,provider_shipment_id)";
+ const q=supabase.from("returns").select(select).order("requested_at",{ascending:false}).limit(100),{data,error}=area==="vendor"?await q.eq("vendor_id",state.currentVendorId):await q;if(error)throw error;
+ let lq=supabase.from("vendor_liabilities").select("amount_cents,recovered_cents,status").in("status",["open","partial"]);if(area==="vendor")lq=lq.eq("vendor_id",state.currentVendorId);const{data:liabs,error:le}=await lq;if(le)throw le;const owing=(liabs||[]).reduce((s,x)=>s+Math.max(0,Number(x.amount_cents)-Number(x.recovered_cents)),0);
+ const cards=(data||[]).map(r=>{const v=onePortal(r.vendors),c=onePortal(r.profiles),ships=Array.isArray(r.return_shipments)?r.return_shipments:[],rev=ships.find(s=>s.leg==="reverse"),ex=ships.find(s=>s.leg==="exchange_outbound");let action="";
+ if(r.status==="requested")action=`<button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="${r.claimed_responsibility==="vendor"?"vendor":"customer"}">Approve â€” ${r.claimed_responsibility==="vendor"?"store":"customer"} responsible</button>${r.claimed_responsibility==="undetermined"?`<button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="vendor">Store responsible</button><button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="customer">Customer responsible</button>`:""}${state.isAdmin?`<button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="kompo">Kompo responsible</button>`:`<button class="table-action" data-return-decision="${r.id}" data-decision="escalate">Escalate</button>`}<button class="table-action" data-return-decision="${r.id}" data-decision="decline">Decline</button>`;
+ else if(r.status==="under_review")action=state.isAdmin?`<button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="vendor">Store responsible</button><button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="customer">Customer responsible</button><button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="kompo">Kompo responsible</button>`:"<p>Waiting for Kompo Nation.</p>";
+ else if(["approved","in_transit"].includes(r.status))action=!rev?`<button class="primary-button" data-prepare-return="${r.id}">Prepare return courier</button>`:rev.status==="awaiting_payment"?"<p>Waiting for customer payment.</p>":`<button class="primary-button" data-return-received="${r.id}">Returned parcel received</button>`;
+ else if(r.status==="received"&&r.resolution_type==="exchange")action=!ex?`<button class="primary-button" data-prepare-exchange="${r.id}">Prepare replacement delivery</button>`:ex.status==="awaiting_payment"?"<p>Waiting for customer replacement-delivery payment.</p>":ex.status==="delivered"?`<button class="table-action" data-close-exchange="${r.id}">Close exchange</button>`:`<p>Replacement: <strong>${escapeHtml(ex.status.replaceAll("_"," "))}</strong></p>`;
+ else if(r.status==="received"&&r.resolution_type==="refund")action=state.isAdmin?`<button class="primary-button" data-confirm-refund="${r.id}">I refunded this in Paystack</button><small>Refund in Paystack first; this then records vendor-net recovery.</small>`:"<p>Waiting for Kompo Nation refund.</p>";
+ const ss=ships.map(s=>`<div class="return-shipment-mini"><span>${s.leg==="reverse"?"Return":"Replacement"} Â· ${escapeHtml(s.status.replaceAll("_"," "))}</span>${s.total_charge_cents!=null?`<strong>${money(s.total_charge_cents)}</strong><small>Courier ${money(s.courier_cost_cents||0)} Â· Logistics ${money(s.logistics_fee_cents||0)}</small>`:""}${s.tracking_url?`<a class="table-action" href="${escapeHtml(s.tracking_url)}" target="_blank" rel="noopener">Track</a>`:""}</div>`).join("");
+ return `<article class="return-card"><div class="return-heading"><div><p class="eyebrow">${escapeHtml(r.public_reference)}</p><h2>${r.resolution_type==="exchange"?"Exchange":"Refund"} Â· ${escapeHtml(v?.business_name||"Store")}</h2><p>${escapeHtml(c?.full_name||"Customer")} Â· ${escapeHtml(r.reason)}</p></div><span class="status-pill">${escapeHtml(r.status.replaceAll("_"," "))}</span></div>${r.customer_note?`<p><strong>Customer note:</strong> ${escapeHtml(r.customer_note)}</p>`:""}${r.exchange_note?`<p><strong>Replacement:</strong> ${escapeHtml(r.exchange_note)}</p>`:""}<p>Responsibility: <strong>${r.responsibility==="vendor"?"Store":r.responsibility==="customer"?"Customer":r.responsibility==="kompo"?"Kompo Nation":"Not decided"}</strong></p><div class="return-shipment-summary">${ss}</div><div class="return-actions">${action}</div></article>`}).join("");
+ content.innerHTML=`${header("AFTER-SALES","Returns & exchanges","Approve requests, assign responsibility, book reverse courier movement and recover store-responsible costs.")}<section class="dashboard-panel"><p class="eyebrow">OUTSTANDING RETURN BALANCE</p><h2>${money(owing)}</h2><p>Open return/refund amounts owed to Kompo Nation. Future vendor Paystack shares repay this balance automatically.</p></section><div class="return-list">${cards||"<section class='dashboard-panel'><p>No return requests yet.</p></section>"}</div>`;
 }
-
+function onePortal(v){return Array.isArray(v)?v[0]:v}
 async function renderCancellations() {
   const { data: requests, error } = await supabase.from("order_cancellation_requests").select("id,public_reference,reason,status,refund_amount_cents,requested_at,vendors(business_name),profiles(full_name),vendor_orders(public_reference)").order("requested_at", { ascending: false }).limit(100);
   if (error) throw error;
@@ -1337,7 +1347,7 @@ function renderInformation() {
         </p>
       </section>
 
-    </div>
+    <section class="dashboard-panel vendor-info-card"><p class="eyebrow">RETURN LOGISTICS</p><h2>Returns and exchanges create new courier legs.</h2><p>Customer-responsible returns are paid by the customer before collection. Store-responsible return courier costs are booked through Kompo Nation and become a store balance recovered from future payouts.</p><p>An exchange can create two new logistics legs: customer â†’ store and store â†’ customer. Each is quoted and charged separately.</p><p>For refunds, Kompo Nation commission is not automatically waived; the original vendor-net merchandise amount may also become a recovery balance.</p></section></div>
   `;
 }
 
@@ -1664,13 +1674,13 @@ const manageProduct = event.target.closest("[data-manage-product]");
     toast("Cancellation moved to review.");
     return renderCancellations();
   }
-  const returnStatus = event.target.closest("[data-return-status]");
-  if (returnStatus) {
-    const { error } = await supabase.rpc("review_return", { p_return_id: returnStatus.dataset.returnStatus, p_next_status: returnStatus.dataset.nextStatus });
-    if (error) return toast(error.message);
-    toast("Return status updated.");
-    return renderReturns();
-  }
+  const rd=event.target.closest("[data-return-decision]");if(rd){try{const{data,error}=await supabase.rpc("decide_return_v2",{p_return_id:rd.dataset.returnDecision,p_decision:rd.dataset.decision,p_responsibility:rd.dataset.responsibility||null,p_note:null});if(error)throw error;if(data?.status==="approved")await portalReturnApi("prepare-reverse",{returnId:rd.dataset.returnDecision});toast(data?.status==="under_review"?"Return escalated.":"Return decision saved.")}catch(e){toast(e.message)}return renderReturns()}
+  const pr=event.target.closest("[data-prepare-return]");if(pr){try{await portalReturnApi("prepare-reverse",{returnId:pr.dataset.prepareReturn});toast("Return courier prepared.")}catch(e){toast(e.message)}return renderReturns()}
+  const rr=event.target.closest("[data-return-received]");if(rr){const{error}=await supabase.rpc("mark_return_received_v2",{p_return_id:rr.dataset.returnReceived});if(error)return toast(error.message);toast("Returned parcel received.");return renderReturns()}
+  const pe=event.target.closest("[data-prepare-exchange]");if(pe){try{await portalReturnApi("prepare-exchange",{returnId:pe.dataset.prepareExchange});toast("Replacement delivery prepared.")}catch(e){toast(e.message)}return renderReturns()}
+  const rf=event.target.closest("[data-confirm-refund]");if(rf){if(!confirm("Confirm only after the customer refund is completed in Paystack."))return;const{error}=await supabase.rpc("confirm_return_refund_v2",{p_return_id:rf.dataset.confirmRefund});if(error)return toast(error.message);toast("Refund recorded; vendor recovery updated.");return renderReturns()}
+  const ce=event.target.closest("[data-close-exchange]");if(ce){const{error}=await supabase.rpc("close_exchange_return_v2",{p_return_id:ce.dataset.closeExchange});if(error)return toast(error.message);toast("Exchange closed.");return renderReturns()}
+
 }
 
 async function handlePortalSubmit(event) {
@@ -1841,8 +1851,6 @@ async function ensureVendorTermsAcceptedV1() {
           and accept the current
           <a
             href="/terms"
-            target="_blank"
-            rel="noopener"
           >Terms of Service and Vendor Clause</a>.
         </span>
       </label>

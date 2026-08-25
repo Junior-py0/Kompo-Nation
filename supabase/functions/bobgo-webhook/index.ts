@@ -1,4 +1,4 @@
-﻿import {
+import {
   json,
   rawBody,
   required,
@@ -167,12 +167,19 @@ Deno.serve(
           }&limit=1`,
         );
 
-      if (!shipments.length) {
-        return json(request, 202, {
-          ok: true,
-          unmatched: true,
-        });
-      }
+      if(!shipments.length){
+      // RETURN_TRACKING_V1
+      const rr=await supabaseRequest(`return_shipments?select=id,return_id,leg,status&provider_shipment_id=eq.${encodeURIComponent(providerId)}&limit=1`);
+      if(!rr.length)return json(request,202,{ok:true,unmatched:true});
+      const s=rr[0],mapped=mappedStatus(payload.status||payload.tracking_status||payload.event),rs=mapped==="shipped"?"in_transit":mapped,changes:any={provider_payload:payload,updated_at:new Date().toISOString()};
+      if(["in_transit","delivered","cancelled"].includes(rs))changes.status=rs;
+      if(payload.tracking_reference||payload.tracking_number)changes.tracking_reference=payload.tracking_reference||payload.tracking_number;
+      if(payload.tracking_url)changes.tracking_url=payload.tracking_url;
+      await supabaseRequest(`return_shipments?id=eq.${encodeURIComponent(s.id)}`,{method:"PATCH",body:changes});
+      if(s.leg==="reverse"&&rs==="in_transit")await supabaseRequest(`returns?id=eq.${encodeURIComponent(s.return_id)}`,{method:"PATCH",body:{status:"in_transit",updated_at:new Date().toISOString()}});
+      if(s.leg==="exchange_outbound"&&rs==="delivered")await supabaseRequest(`returns?id=eq.${encodeURIComponent(s.return_id)}`,{method:"PATCH",body:{status:"closed",completed_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
+      return json(request,200,{ok:true,returnShipment:true});
+    }
 
       const shipment =
         shipments[0];

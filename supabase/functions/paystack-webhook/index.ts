@@ -1,4 +1,4 @@
-﻿import {
+import {
   json,
   required,
   rpc,
@@ -204,6 +204,19 @@ Deno.serve(
 
       const transaction =
         verification.data;
+      // RETURN_PAYMENT_WEBHOOK_V1
+      if(reference.startsWith("KNRP-")){
+        const rows=await supabaseRequest(`return_payments?select=*&provider_reference=eq.${encodeURIComponent(reference)}&limit=1`),pay=rows?.[0];
+        if(!pay)return json(request,202,{ok:true,unmatchedReturnPayment:true});
+        const amount=Number(transaction?.amount),currency=String(transaction?.currency||"").toUpperCase();
+        if(transaction?.status!=="success"||currency!=="ZAR"||amount!==Number(pay.amount_cents)){await supabaseRequest(`return_payments?id=eq.${encodeURIComponent(pay.id)}`,{method:"PATCH",body:{status:"review",provider_payload:{event,verification:transaction},updated_at:new Date().toISOString()}});return json(request,200,{ok:true,paymentReview:true,kind:"return_logistics"});}
+        await supabaseRequest("webhook_events",{method:"POST",body:{provider:"paystack",event_key:`return-charge.success:${reference}`,payload:event},headers:{Prefer:"resolution=ignore-duplicates"}});
+        const fin=await rpc("finalize_return_payment",{p_provider_reference:reference,p_amount_cents:amount,p_payload:{event,verification:transaction}});
+        const response=await fetch(`${required("SUPABASE_URL").replace(/\/$/,"")}/functions/v1/return-logistics`,{method:"POST",headers:{Authorization:`Bearer ${required("SUPABASE_SERVICE_ROLE_KEY")}`,"Content-Type":"application/json","x-kompo-internal":required("CRON_SECRET")},body:JSON.stringify({action:"book-paid-leg",returnShipmentId:fin.returnShipmentId})}),booked=await response.json();
+        if(!response.ok)throw new Error(booked?.error||"Paid return could not be booked.");
+        return json(request,200,{ok:true,returnPayment:true});
+      }
+
 
       if (
         transaction?.status !==
@@ -402,6 +415,9 @@ Deno.serve(
             },
           },
         );
+      // SETTLE_VENDOR_RECOVERY_V1
+      await rpc("settle_vendor_liability_recoveries_by_reference",{p_public_reference:reference});
+
 
       return json(
         request,
