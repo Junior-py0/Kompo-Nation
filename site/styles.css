@@ -1417,3 +1417,25 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 /* RETURN_UI_V1 */
 .return-list{display:grid;gap:1rem;margin-top:1rem}.return-card,.return-shipment-card{border:1px solid rgba(36,43,38,.1);border-radius:18px;background:rgba(255,255,255,.42);padding:1rem}.return-heading,.return-shipment-mini{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}.return-shipment-card,.return-shipment-summary{display:grid;gap:.7rem;margin-top:.8rem}.return-shipment-mini{padding:.7rem;border-radius:12px;background:rgba(255,255,255,.48)}.return-shipment-mini small{display:block;opacity:.7}.return-price-grid{display:grid;grid-template-columns:1fr auto;gap:.4rem 1rem;border-top:1px solid rgba(36,43,38,.1);padding-top:.7rem}.return-price-grid span{opacity:.7}.return-actions{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}.return-dialog{width:min(92vw,650px);max-height:88vh;overflow:auto;border:0;border-radius:22px;padding:0;background:#f6f4ee}.return-dialog::backdrop{background:rgba(20,24,20,.55);backdrop-filter:blur(5px)}.return-form{display:grid;gap:1rem;padding:1.4rem}.return-form label{display:grid;gap:.35rem}.legal-return-panel{margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid rgba(36,43,38,.12)}@media(max-width:700px){.return-heading,.return-shipment-mini{flex-direction:column}.return-actions button{width:100%}}
+
+/* KOMPO_BRAND_ASSETS_V1 */
+.kompo-brand-logo {
+  display: block;
+  width: clamp(128px, 12vw, 178px);
+  height: auto;
+  border-radius: 8px;
+}
+
+.footer-brand .kompo-brand-logo {
+  width: min(190px, 100%);
+}
+
+.portal-sidebar .kompo-brand-logo {
+  width: 148px;
+}
+
+@media (max-width: 620px) {
+  .kompo-brand-logo {
+    width: 132px;
+  }
+}

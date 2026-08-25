@@ -12,3 +12,13 @@
 
 /login*
   X-Robots-Tag: noindex, nofollow
+
+# KOMPO VERSIONED BRAND ASSETS
+/assets/campaign-20260825.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/kompo-nation-logo-v1.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/kompo-nation-mark-v1.png
+  Cache-Control: public, max-age=31536000, immutable
