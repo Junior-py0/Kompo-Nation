@@ -1265,3 +1265,152 @@ button, a { -webkit-tap-highlight-color: transparent; }
     grid-template-columns: 1fr;
   }
 }
+
+
+/* LEGAL_ACCEPTANCE_V1 */
+
+.legal-consent {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+  gap: .7rem;
+  padding: .85rem .9rem;
+  border: 1px solid rgba(36,43,38,.12);
+  border-radius: 14px;
+  background: rgba(255,255,255,.48);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.legal-consent input {
+  width: 18px;
+  height: 18px;
+  margin-top: .15rem;
+  accent-color: currentColor;
+}
+
+.legal-consent a {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.signup-legal-consent {
+  margin: .9rem 0;
+}
+
+.checkout-legal-consent {
+  margin: 1rem 0 .85rem;
+}
+
+.terms-gate {
+  max-width: 720px;
+}
+
+.terms-gate .legal-consent {
+  margin: 1rem 0;
+}
+
+.portal-legal-link {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: .7rem .8rem;
+  border-radius: 12px;
+  text-decoration: none;
+  font-size: .92rem;
+  opacity: .75;
+}
+
+.portal-legal-link:hover {
+  opacity: 1;
+  background: rgba(255,255,255,.07);
+}
+
+.legal-page {
+  width: min(100% - 2rem, 980px);
+  margin: 0 auto;
+  padding: clamp(2rem,5vw,5rem) 0;
+}
+
+.legal-hero {
+  padding-bottom: 2rem;
+  border-bottom: 1px solid rgba(36,43,38,.12);
+}
+
+.legal-hero h1 {
+  margin: .35rem 0 .6rem;
+  font-size: clamp(2.2rem,6vw,5rem);
+}
+
+.legal-meta {
+  opacity: .6;
+  font-size: .9rem;
+}
+
+.legal-intro {
+  max-width: 780px;
+  margin-top: 1.25rem;
+  line-height: 1.72;
+}
+
+.legal-intro p {
+  margin: 0 0 .85rem;
+}
+
+.legal-actions {
+  margin-top: 1.2rem;
+}
+
+.legal-sections {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.legal-section {
+  padding: clamp(1.1rem,3vw,1.8rem);
+  border: 1px solid rgba(36,43,38,.10);
+  border-radius: 18px;
+  background: rgba(255,255,255,.42);
+}
+
+.legal-section h2 {
+  margin: 0 0 .85rem;
+  font-size: 1.12rem;
+}
+
+.legal-section p {
+  margin: 0 0 .8rem;
+  line-height: 1.68;
+}
+
+.legal-section p:last-child {
+  margin-bottom: 0;
+}
+
+.legal-section a {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media print {
+
+  header.site-header,
+  footer,
+  .legal-actions {
+    display: none !important;
+  }
+
+  .legal-page {
+    width: 100%;
+    padding: 0;
+  }
+
+  .legal-section {
+    break-inside: avoid;
+    border: 0;
+    padding: 1rem 0;
+  }
+}

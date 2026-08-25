@@ -31,6 +31,28 @@
         <div id="signup-fields" hidden>
           <label>Full name<input name="fullName" autocomplete="name"></label>
           <label>Phone number<input name="phone" autocomplete="tel" inputmode="tel"></label>
+
+          <!-- SIGNUP_TERMS_ACCEPTANCE_V1 -->
+          <label class="legal-consent signup-legal-consent">
+            <input
+              name="acceptTerms"
+              type="checkbox"
+            >
+            <span>
+              I agree to the
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener"
+              >Terms of Service</a>
+              and acknowledge the
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener"
+              >Privacy Policy</a>.
+            </span>
+          </label>
         </div>
         <label>Email address<input name="email" type="email" autocomplete="email" required></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" minlength="8" required></label>

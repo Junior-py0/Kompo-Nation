@@ -1,5 +1,7 @@
 (() => {
 const { getSession, signIn, signUp } = window.KOMPO_SUPABASE;
+// SIGNUP_TERMS_ACCEPTANCE_V1
+const CURRENT_TERMS_VERSION = "1.0";
 
 const form = document.querySelector("#auth-form");
 const message = document.querySelector("#auth-message");
@@ -35,6 +37,7 @@ function setMode(nextMode) {
   form.elements.password.autocomplete = signingUp ? "new-password" : "current-password";
   form.elements.fullName.required = signingUp;
   form.elements.phone.required = signingUp;
+  form.elements.acceptTerms.required = signingUp;
   message.textContent = "";
 }
 
@@ -49,7 +52,35 @@ form.addEventListener("submit", async (event) => {
   const values = Object.fromEntries(new FormData(form));
   try {
     if (mode === "signup") {
-      const result = await signUp({ email: values.email.trim().toLowerCase(), password: values.password, fullName: values.fullName.trim(), phone: values.phone.trim() });
+      if (values.acceptTerms !== "on") {
+        throw new Error(
+          "You must accept the Terms of Service before creating an account."
+        );
+      }
+
+      const termsAcceptedAt =
+        new Date().toISOString();
+
+      const result = await signUp({
+        email:
+          values.email
+            .trim()
+            .toLowerCase(),
+
+        password:
+          values.password,
+
+        fullName:
+          values.fullName.trim(),
+
+        phone:
+          values.phone.trim(),
+
+        termsVersion:
+          CURRENT_TERMS_VERSION,
+
+        termsAcceptedAt
+      });
       if (!result.session) {
         message.textContent = "Check your email to confirm the account, then return here to sign in.";
         setMode("signin");

@@ -1,4 +1,4 @@
-﻿import {
+import {
   authenticatedUser,
   json,
   preflight,
@@ -100,6 +100,11 @@ async function verifyQuote(
   );
 }
 
+// CHECKOUT_TERMS_SERVER_V1
+const CURRENT_TERMS_VERSION =
+  "1.0";
+
+
 Deno.serve(
   async (request: Request) => {
     const cors =
@@ -171,6 +176,97 @@ Deno.serve(
       }
 
       // ------------------------------------------------------
+
+      // ------------------------------------------------------
+      // Current Terms acceptance.
+      //
+      // The acceptance ID is single-use for an order:
+      // - correct signed-in user
+      // - checkout context
+      // - current terms version
+      // - recent acceptance
+      // - not already bound to another order
+      // ------------------------------------------------------
+
+      const termsAcceptanceId =
+        String(
+          body.termsAcceptanceId ||
+          "",
+        );
+
+
+      if (
+        body.termsVersion !==
+          CURRENT_TERMS_VERSION ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+          .test(
+            termsAcceptanceId,
+          )
+      ) {
+        return json(
+          request,
+          428,
+          {
+            error:
+              "Accept the current Terms of Service before continuing.",
+          },
+        );
+      }
+
+
+      const acceptanceRows =
+        await supabaseRequest(
+          `terms_acceptances?select=id,accepted_at,user_id,terms_version,acceptance_context,order_id&id=eq.${
+            encodeURIComponent(
+              termsAcceptanceId,
+            )
+          }&user_id=eq.${
+            encodeURIComponent(
+              user.id,
+            )
+          }&terms_version=eq.${
+            encodeURIComponent(
+              CURRENT_TERMS_VERSION,
+            )
+          }&acceptance_context=eq.checkout&order_id=is.null&limit=1`,
+        );
+
+
+      const acceptance =
+        Array.isArray(
+          acceptanceRows,
+        )
+          ? acceptanceRows[0]
+          : null;
+
+
+      const acceptedAt =
+        acceptance?.accepted_at
+          ? Date.parse(
+              acceptance.accepted_at,
+            )
+          : NaN;
+
+
+      if (
+        !acceptance ||
+        !Number.isFinite(
+          acceptedAt,
+        ) ||
+        Date.now() - acceptedAt >
+          2 * 60 * 60 * 1000
+      ) {
+        return json(
+          request,
+          428,
+          {
+            error:
+              "Your Terms acceptance expired. Review the order and accept the Terms again.",
+          },
+        );
+      }
+
+
       // Verify signed shipping quotes.
       // ------------------------------------------------------
 
@@ -313,6 +409,28 @@ Deno.serve(
           "Checkout creation returned an invalid order.",
         );
       }
+
+
+      // Bind this acceptance to this specific order.
+      // It cannot be replayed for another checkout.
+
+      await supabaseRequest(
+        `terms_acceptances?id=eq.${
+          encodeURIComponent(
+            termsAcceptanceId,
+          )
+        }`,
+        {
+          method:
+            "PATCH",
+
+          body: {
+            order_id:
+              order.orderId,
+          },
+        },
+      );
+
 
       const siteUrl =
         required(

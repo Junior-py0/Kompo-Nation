@@ -22,14 +22,63 @@ const signIn = async (email, password) => {
   return data;
 };
 
-const signUp = async ({ email, password, fullName, phone }) => {
-  if (!supabase) throw new Error("Connect Supabase in config.js before creating accounts.");
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { data: { full_name: fullName, phone } },
-  });
+// SUPABASE_SIGNUP_TERMS_V1
+const signUp = async ({
+  email,
+  password,
+  fullName,
+  phone,
+  termsVersion,
+  termsAcceptedAt
+}) => {
+
+  if (!supabase) {
+    throw new Error(
+      "Kompo Nation account services are unavailable."
+    );
+  }
+
+
+  if (
+    termsVersion !== "1.0"
+    || !termsAcceptedAt
+  ) {
+    throw new Error(
+      "Terms acceptance is required before creating an account."
+    );
+  }
+
+
+  const {
+    data,
+    error
+  } =
+    await supabase.auth.signUp({
+      email,
+      password,
+
+      options: {
+        data: {
+          full_name:
+            fullName,
+
+          phone,
+
+          terms_version:
+            termsVersion,
+
+          terms_accepted:
+            true,
+
+          terms_accepted_at:
+            termsAcceptedAt
+        }
+      }
+    });
+
+
   if (error) throw error;
+
   return data;
 };
 

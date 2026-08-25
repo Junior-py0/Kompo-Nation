@@ -1853,6 +1853,32 @@ async function beginCheckout(event) {
       <div class="checkout-courier-list">
         ${courierLines}
       </div>
+      <!-- CHECKOUT_TERMS_ACCEPTANCE_V1 -->
+      <label class="legal-consent checkout-legal-consent">
+        <input
+          id="checkout-terms-acceptance"
+          type="checkbox"
+        >
+
+        <span>
+          I agree to the
+          <a
+            href="/terms"
+            target="_blank"
+            rel="noopener"
+          >Terms of Service</a>,
+          acknowledge the
+          <a
+            href="/privacy"
+            target="_blank"
+            rel="noopener"
+          >Privacy Policy</a>
+          and accept the delivery charges shown
+          above.
+        </span>
+      </label>
+
+
 
       <button
         class="primary-button checkout-payment-button"
@@ -1937,6 +1963,22 @@ async function continueCheckoutToPayment() {
     return;
   }
 
+  const termsCheckbox =
+    document.querySelector(
+      "#checkout-terms-acceptance"
+    );
+
+  if (!termsCheckbox?.checked) {
+
+    if (message) {
+      message.textContent =
+        "Accept the Terms of Service before continuing to payment.";
+    }
+
+    return;
+  }
+
+
   button.disabled = true;
   button.textContent =
     "Opening secure payment…";
@@ -1946,6 +1988,31 @@ async function continueCheckoutToPayment() {
   }
 
   try {
+
+    const {
+      data: termsAcceptanceId,
+      error: termsError
+    } =
+      await supabase.rpc(
+        "accept_current_terms",
+        {
+          p_context:
+            "checkout"
+        }
+      );
+
+
+    if (termsError) {
+      throw termsError;
+    }
+
+
+    if (!termsAcceptanceId) {
+      throw new Error(
+        "Terms acceptance could not be recorded."
+      );
+    }
+
 
     const headers = {
       "Content-Type":
@@ -1966,9 +2033,10 @@ async function continueCheckoutToPayment() {
               pending.address,
             contact:
               pending.contact,
-            quotes:
-              pending.quotes
-          })
+            quotes: pending.quotes,
+          termsVersion:
+            CURRENT_TERMS_VERSION,
+          termsAcceptanceId,})
         }
       );
 
@@ -3371,9 +3439,1036 @@ function setupDelegatedEvents() {
 /* 08. ROUTER AND STARTUP                                                     */
 /* ========================================================================== */
 
+
+// LEGAL_TERMS_V1
+const CURRENT_TERMS_VERSION = "1.0";
+
+
+const KOMPO_LEGAL_PAGES = {
+
+  terms: {
+    eyebrow: "LEGAL",
+    title: "Terms of Service",
+    meta:
+      "Version 1.0 · Effective 25 August 2026",
+
+    intro: `
+      <p>
+        These Terms govern use of Kompo Nation,
+        customer accounts, purchases made through
+        the marketplace and, where applicable,
+        participation by vendors selling through
+        Kompo Nation.
+      </p>
+
+      <p>
+        By creating an account, completing a
+        purchase or accepting the Vendor Clause,
+        you agree to the provisions that apply to
+        you.
+      </p>
+
+      <p>
+        Nothing in these Terms is intended to
+        exclude, restrict or waive any right that
+        cannot lawfully be excluded under South
+        African law.
+      </p>
+    `,
+
+    sections: [
+
+      [
+        "1. Kompo Nation and the marketplace",
+        `
+          <p>
+            Kompo Nation is a South African online
+            marketplace operated under the Kompo
+            Nation trading name.
+          </p>
+
+          <p>
+            The platform allows independent vendors
+            to offer merchandise, provides
+            marketplace technology, facilitates
+            payment processing and coordinates
+            delivery and fulfilment services.
+          </p>
+
+          <p>
+            Unless a product is expressly identified
+            as being sold directly by Kompo Nation,
+            the vendor shown on the relevant product
+            or store page is the supplier of that
+            merchandise.
+          </p>
+
+          <p>
+            Notices and enquiries may be submitted
+            using the contact information published
+            on the Kompo Nation Contact page.
+          </p>
+        `
+      ],
+
+
+      [
+        "2. Accounts",
+        `
+          <p>
+            Account information must be accurate and
+            kept reasonably current. Users are
+            responsible for keeping passwords and
+            login credentials secure.
+          </p>
+
+          <p>
+            Kompo Nation may suspend access where
+            there is reasonable evidence of fraud,
+            unlawful activity, abuse, attempted
+            interference with the platform or a
+            material breach of these Terms.
+          </p>
+
+          <p>
+            Acceptance of the current Terms may be
+            required at signup, checkout, vendor
+            access or when a materially updated
+            version becomes effective.
+          </p>
+        `
+      ],
+
+
+      [
+        "3. Products and independent vendors",
+        `
+          <p>
+            Vendors are responsible for the
+            accuracy of their product descriptions,
+            photographs, sizes, colours, prices,
+            stock quantities and other material
+            information.
+          </p>
+
+          <p>
+            Kompo Nation may suspend or remove
+            unlawful, misleading, unsafe,
+            counterfeit or materially inaccurate
+            listings.
+          </p>
+        `
+      ],
+
+
+      [
+        "4. Prices and payment",
+        `
+          <p>
+            Amounts displayed to South African
+            customers are stated in South African
+            rand unless otherwise indicated.
+          </p>
+
+          <p>
+            Before payment, the customer is shown
+            the merchandise amount, delivery
+            charges and total amount due.
+          </p>
+
+          <p>
+            Payments are processed through
+            Paystack. A transaction is not treated
+            as successfully paid merely because a
+            browser returns to Kompo Nation.
+            Payment must be confirmed through the
+            authorised payment process.
+          </p>
+        `
+      ],
+
+
+      [
+        "5. Courier delivery and logistics fees",
+        `
+          <p>
+            The delivery amount shown at checkout
+            may contain two components:
+            <strong>Courier delivery</strong> and
+            <strong>Logistics &amp; fulfilment</strong>.
+          </p>
+
+          <p>
+            Courier delivery represents the
+            underlying courier component attributed
+            to the shipment.
+          </p>
+
+          <p>
+            Logistics &amp; fulfilment is a Kompo
+            Nation service charge for functions such
+            as courier-rate sourcing, shipment
+            administration, fulfilment support,
+            tracking infrastructure and logistics
+            coordination. That amount may be retained
+            by Kompo Nation.
+          </p>
+
+          <p>
+            Kompo Nation may apply a minimum total
+            delivery amount or an uplift to lower
+            courier rates. The exact delivery amount
+            charged to the customer is always shown
+            before payment.
+          </p>
+
+          <p>
+            The total delivery amount can therefore
+            be higher than the underlying courier
+            charge.
+          </p>
+        `
+      ],
+
+
+      [
+        "6. Delivery",
+        `
+          <p>
+            Delivery is carried out by independent
+            courier providers made available through
+            Kompo Nation's logistics systems.
+          </p>
+
+          <p>
+            Courier service levels and delivery
+            times are estimates unless expressly
+            guaranteed by the relevant courier.
+          </p>
+
+          <p>
+            Customers must provide a complete and
+            accurate street address, area or suburb,
+            city, province, postal code and usable
+            contact information.
+          </p>
+
+          <p>
+            Additional costs reasonably caused by
+            an incorrect address, failed customer
+            handover or another customer-caused
+            delivery issue may be recoverable where
+            permitted by law.
+          </p>
+        `
+      ],
+
+
+      [
+        "7. Ordinary order cancellation",
+        `
+          <p>
+            Kompo Nation may allow ordinary
+            cancellation while an order remains in
+            an early fulfilment stage.
+          </p>
+
+          <p>
+            The normal cancellation facility may
+            close once the vendor moves the order
+            into <strong>Packing</strong>, because
+            fulfilment has begun.
+          </p>
+
+          <p>
+            Closing the ordinary cancellation button
+            does not remove any cooling-off, return,
+            refund or other consumer right that
+            applies by law.
+          </p>
+        `
+      ],
+
+
+      [
+        "8. Returns",
+        `
+          <p>
+            Customers may submit qualifying return
+            requests through Kompo Nation.
+          </p>
+
+          <p>
+            A request may require a reason,
+            photographs or other information that
+            is reasonably necessary to assess the
+            return.
+          </p>
+
+          <p>
+            A vendor may review a return request,
+            but a vendor cannot reject a return where
+            the customer has a non-excludable legal
+            right to the return.
+          </p>
+        `
+      ],
+
+
+      [
+        "9. Return courier charges",
+        `
+          <p>
+            A return shipment is separate from the
+            original outbound delivery. The original
+            delivery amount does not automatically
+            include a later return shipment.
+          </p>
+
+          <p>
+            A new courier charge may therefore apply
+            when goods need to travel from the
+            customer back to a vendor.
+          </p>
+
+          <p>
+            Where the return arises from a vendor
+            sending the wrong item, supplying
+            defective goods, materially
+            misdescribing goods or another
+            vendor-responsible problem, the vendor
+            may be responsible for the return
+            transport where required by law.
+          </p>
+
+          <p>
+            Where a lawful change-of-mind or
+            cooling-off return allows the direct
+            return cost to be borne by the customer,
+            the customer may be required to pay that
+            cost.
+          </p>
+        `
+      ],
+
+
+      [
+        "10. Refunds",
+        `
+          <p>
+            Approved refunds are processed through
+            the applicable payment process and may
+            require additional banking or payment
+            processing time before appearing in the
+            customer's account.
+          </p>
+
+          <p>
+            Refund values and any lawful deductions
+            depend on the reason for cancellation or
+            return and applicable South African law.
+          </p>
+        `
+      ],
+
+
+      [
+        "11. Defective or incorrectly supplied goods",
+        `
+          <p>
+            Nothing in these Terms removes statutory
+            rights relating to defective, unsafe,
+            incorrectly supplied or materially
+            misdescribed goods.
+          </p>
+
+          <p>
+            Where applicable legislation requires a
+            supplier to bear the risk or expense of
+            a return, these Terms do not transfer
+            that legally required cost to the
+            customer.
+          </p>
+        `
+      ],
+
+
+      [
+        "12. Returned product condition",
+        `
+          <p>
+            Customers must take reasonable care of
+            goods while they remain in their
+            possession.
+          </p>
+
+          <p>
+            Where legally permitted, a reasonable
+            deduction may apply where goods have
+            been damaged, altered or used beyond
+            what was reasonably necessary to inspect
+            them.
+          </p>
+        `
+      ],
+
+
+      [
+        "13. Fraud, chargebacks and payment disputes",
+        `
+          <p>
+            Kompo Nation may investigate suspected
+            fraud, misuse, chargebacks or
+            unauthorised transactions.
+          </p>
+
+          <p>
+            Relevant transaction, fulfilment,
+            payment and delivery records may be
+            provided to payment providers, financial
+            institutions, regulators or law
+            enforcement where reasonably necessary
+            and lawful.
+          </p>
+        `
+      ],
+
+
+      [
+        "14. Privacy",
+        `
+          <p>
+            Personal information is processed for
+            account administration, payment,
+            delivery, fraud prevention, support and
+            other legitimate marketplace operations.
+          </p>
+
+          <p>
+            Further information appears in the
+            <a href="/privacy">Kompo Nation Privacy Policy</a>.
+          </p>
+        `
+      ],
+
+
+      [
+        "15. Intellectual property",
+        `
+          <p>
+            The Kompo Nation name, platform design,
+            software and original platform material
+            may not be commercially copied or
+            exploited without permission.
+          </p>
+
+          <p>
+            Vendors are responsible for ensuring
+            that they have the right to use the
+            product images, trademarks, designs,
+            names and other material they provide.
+          </p>
+        `
+      ],
+
+
+      [
+        "16. Third-party services and availability",
+        `
+          <p>
+            Kompo Nation uses third-party services
+            including hosting, Supabase, Paystack,
+            courier and communication providers.
+          </p>
+
+          <p>
+            Reasonable efforts are made to keep the
+            marketplace available, but uninterrupted
+            operation cannot be guaranteed where
+            outages, maintenance or third-party
+            failures occur.
+          </p>
+        `
+      ],
+
+
+      [
+        "17. Liability",
+        `
+          <p>
+            To the fullest extent permitted by law,
+            Kompo Nation is not liable for indirect
+            or consequential loss arising solely
+            from events outside its reasonable
+            control.
+          </p>
+
+          <p>
+            Nothing in this clause excludes or
+            limits liability that South African law
+            does not permit to be excluded or
+            limited.
+          </p>
+        `
+      ],
+
+
+      [
+        "18. Changes to these Terms",
+        `
+          <p>
+            Kompo Nation may update these Terms for
+            legal, operational, technical or
+            commercial reasons.
+          </p>
+
+          <p>
+            Each published set of Terms carries a
+            version and effective date. Material
+            updates may require fresh acceptance.
+          </p>
+
+          <p>
+            Historical acceptance records may be
+            retained for evidentiary and compliance
+            purposes.
+          </p>
+        `
+      ],
+
+
+      [
+        "19. Governing law and disputes",
+        `
+          <p>
+            These Terms are governed by the laws of
+            the Republic of South Africa.
+          </p>
+
+          <p>
+            Users and Kompo Nation should first try
+            in good faith to resolve disputes
+            directly.
+          </p>
+
+          <p>
+            Nothing prevents a consumer from using
+            an applicable regulator, ombud,
+            tribunal, complaint process or court.
+          </p>
+        `
+      ],
+
+
+      [
+        "20. Vendor Clause — responsibility",
+        `
+          <p>
+            The following clauses apply additionally
+            to vendors selling through Kompo Nation.
+          </p>
+
+          <p>
+            Vendors remain responsible for the
+            legality, safety, quality, authenticity,
+            description and availability of their
+            merchandise and for complying with
+            applicable consumer-protection duties.
+          </p>
+        `
+      ],
+
+
+      [
+        "21. Vendor Clause — marketplace commission",
+        `
+          <p>
+            Unless a different rate is expressly
+            agreed with or configured for a vendor,
+            Kompo Nation's standard marketplace
+            commission is
+            <strong>10% of merchandise sales</strong>.
+          </p>
+
+          <p>
+            Kompo Nation's cumulative platform
+            earnings, profitability and earnings
+            generated across other vendors are
+            confidential operator information.
+          </p>
+        `
+      ],
+
+
+      [
+        "22. Vendor Clause — commission after a return or refund",
+        `
+          <p>
+            Except where Kompo Nation agrees
+            otherwise in writing or applicable law
+            requires another result, marketplace
+            commission earned for facilitating a
+            completed transaction remains payable
+            by the vendor even if merchandise is
+            later returned or refunded.
+          </p>
+
+          <p>
+            This rule does not reduce any refund
+            legally owed to the customer. The vendor
+            may therefore bear the commercial effect
+            of the retained marketplace commission.
+          </p>
+        `
+      ],
+
+
+      [
+        "23. Vendor Clause — vendor-caused returns",
+        `
+          <p>
+            Where a return results from the wrong
+            item or size being supplied, defective
+            merchandise, a material
+            misrepresentation or another
+            vendor-responsible problem, return
+            courier costs may be charged to or
+            deducted from amounts due to the vendor
+            where legally permitted.
+          </p>
+        `
+      ],
+
+
+      [
+        "24. Vendor Clause — fulfilment and packaging",
+        `
+          <p>
+            Vendors must maintain accurate product
+            weights, stock and package information.
+          </p>
+
+          <p>
+            Standard package dimensions, packaging
+            weight and item capacity must reasonably
+            represent the parcel handed to the
+            courier.
+          </p>
+
+          <p>
+            A vendor should move an order to Packed
+            only when the physical parcel is
+            complete.
+          </p>
+        `
+      ],
+
+
+      [
+        "25. Vendor Clause — courier collection",
+        `
+          <p>
+            Ready for collection means the parcel is
+            physically available at the vendor's
+            saved collection address.
+          </p>
+
+          <p>
+            A courier collection cut-off is the
+            deadline for requesting that courier
+            service. It is not a guarantee of the
+            driver's arrival time.
+          </p>
+
+          <p>
+            Vendors must ensure that somebody is
+            available to hand over a booked parcel
+            and must follow any waybill or label
+            requirements.
+          </p>
+        `
+      ],
+
+
+      [
+        "26. Vendor Clause — payouts, deductions and suspension",
+        `
+          <p>
+            Kompo Nation may deduct agreed
+            marketplace commissions, refunds,
+            chargebacks, vendor-responsible return
+            costs and other amounts properly due
+            under the vendor arrangement from
+            amounts otherwise payable to the vendor,
+            subject to applicable law.
+          </p>
+
+          <p>
+            Products or vendor access may be
+            suspended for fraud, unlawful goods,
+            counterfeit merchandise, serious
+            consumer harm, repeated material stock
+            inaccuracies or serious breach of these
+            Terms.
+          </p>
+        `
+      ]
+
+    ]
+  },
+
+
+  privacy: {
+    eyebrow: "PRIVACY",
+    title: "Privacy Policy",
+    meta:
+      "Effective 25 August 2026",
+
+    intro: `
+      <p>
+        Kompo Nation processes personal information
+        only where reasonably necessary to operate
+        the marketplace and associated services.
+      </p>
+    `,
+
+    sections: [
+
+      [
+        "Information we collect",
+        `
+          <p>
+            We may process names, email addresses,
+            telephone numbers, account identifiers,
+            delivery addresses, order information,
+            return information, support messages and
+            technical information associated with
+            use of the platform.
+          </p>
+
+          <p>
+            Card details are handled by the
+            authorised payment provider and are not
+            intentionally stored as raw card
+            credentials by Kompo Nation.
+          </p>
+        `
+      ],
+
+
+      [
+        "Why we use information",
+        `
+          <p>
+            Information may be used to create and
+            manage accounts, process transactions,
+            deliver orders, coordinate couriers,
+            prevent fraud, administer returns,
+            provide customer support, maintain
+            platform security and comply with legal
+            obligations.
+          </p>
+        `
+      ],
+
+
+      [
+        "Who information is shared with",
+        `
+          <p>
+            Relevant information may be shared with
+            the vendor fulfilling an order,
+            Paystack, Bob Go and participating
+            couriers, Supabase, hosting providers,
+            communication providers and authorised
+            professional or regulatory parties where
+            necessary and lawful.
+          </p>
+
+          <p>
+            Vendors receive only information
+            reasonably required to fulfil and
+            administer their orders.
+          </p>
+        `
+      ],
+
+
+      [
+        "Retention",
+        `
+          <p>
+            Records may be retained for as long as
+            reasonably necessary for transactions,
+            accounting, fraud prevention, dispute
+            handling, legal compliance and
+            legitimate operational needs.
+          </p>
+
+          <p>
+            Legal acceptance and transaction records
+            may be retained after an account is no
+            longer actively used where there is a
+            legitimate or legal reason to do so.
+          </p>
+        `
+      ],
+
+
+      [
+        "Security",
+        `
+          <p>
+            Kompo Nation uses reasonable technical
+            and organisational safeguards, including
+            authenticated access, database access
+            controls and server-side handling of
+            private API credentials.
+          </p>
+
+          <p>
+            No internet service can guarantee
+            absolute security.
+          </p>
+        `
+      ],
+
+
+      [
+        "Your choices and rights",
+        `
+          <p>
+            Users may request reasonable assistance
+            relating to the personal information
+            associated with their account and may
+            exercise applicable rights provided by
+            South African data-protection law.
+          </p>
+
+          <p>
+            Privacy enquiries may be submitted
+            through the
+            <a href="/contact">Contact page</a>.
+          </p>
+        `
+      ]
+
+    ]
+  },
+
+
+  returns: {
+    eyebrow: "RETURNS",
+    title: "Returns & Refunds",
+    meta:
+      "Customer policy · Effective 25 August 2026",
+
+    intro: `
+      <p>
+        This policy explains the Kompo Nation return
+        process. It operates together with the Terms
+        of Service and does not remove statutory
+        consumer rights.
+      </p>
+    `,
+
+    sections: [
+
+      [
+        "Requesting a return",
+        `
+          <p>
+            A return request may be submitted for an
+            eligible delivered order. Customers
+            should provide the reason and any
+            reasonably required photographs or
+            supporting information.
+          </p>
+        `
+      ],
+
+
+      [
+        "Vendor review",
+        `
+          <p>
+            The relevant vendor may review the
+            request through the vendor portal.
+            Approval cannot be withheld where the
+            customer has a non-excludable legal
+            right to return the goods.
+          </p>
+        `
+      ],
+
+
+      [
+        "Return courier",
+        `
+          <p>
+            Return transport is a separate courier
+            movement and is not automatically
+            included in the original delivery
+            charge.
+          </p>
+
+          <p>
+            After a return is approved, Kompo Nation
+            may coordinate a return collection or
+            provide further return instructions.
+            A fresh courier charge may apply.
+          </p>
+        `
+      ],
+
+
+      [
+        "Who pays for return transport",
+        `
+          <p>
+            Where the vendor supplied the wrong
+            item, defective goods or materially
+            misdescribed merchandise, the vendor may
+            be responsible for the return cost where
+            required by law.
+          </p>
+
+          <p>
+            Where applicable law permits a customer
+            to bear the direct cost of a
+            change-of-mind or cooling-off return,
+            that direct return cost may be charged
+            to the customer.
+          </p>
+        `
+      ],
+
+
+      [
+        "Refund timing",
+        `
+          <p>
+            Refunds are processed only after the
+            return or cancellation reaches the
+            appropriate approved stage. Payment
+            provider and banking processing times
+            may apply after Kompo Nation submits the
+            refund.
+          </p>
+        `
+      ],
+
+
+      [
+        "Ordinary cancellation",
+        `
+          <p>
+            The ordinary cancellation button may
+            become unavailable once a vendor begins
+            Packing the order.
+          </p>
+
+          <p>
+            This operational rule does not remove
+            consumer rights that apply by law.
+          </p>
+        `
+      ]
+
+    ]
+  }
+
+};
+
+
+function renderLegalPage(kind) {
+
+  const page =
+    KOMPO_LEGAL_PAGES[kind];
+
+  if (!page) {
+    return renderNotFound();
+  }
+
+
+  app.innerHTML = `
+    <section class="legal-page">
+
+      <header class="legal-hero">
+
+        <p class="eyebrow">
+          ${page.eyebrow}
+        </p>
+
+        <h1>
+          ${page.title}
+        </h1>
+
+        <p class="legal-meta">
+          ${page.meta}
+        </p>
+
+        <div class="legal-intro">
+          ${page.intro}
+        </div>
+
+        <div class="legal-actions">
+          <button
+            class="quiet-button"
+            type="button"
+            onclick="window.print()"
+          >
+            Print / save a copy
+          </button>
+        </div>
+
+      </header>
+
+
+      <div class="legal-sections">
+
+        ${
+          page.sections
+            .map(
+              ([title, body]) => `
+                <section class="legal-section">
+
+                  <h2>
+                    ${title}
+                  </h2>
+
+                  <div>
+                    ${body}
+                  </div>
+
+                </section>
+              `
+            )
+            .join("")
+        }
+
+      </div>
+
+    </section>
+  `;
+}
+
+
 async function renderRoute() {
   const { path } =
     currentRoute();
+
+  if (path === "/terms") {
+    return renderLegalPage("terms");
+  }
+
+  if (path === "/privacy") {
+    return renderLegalPage("privacy");
+  }
+
+  if (path === "/returns") {
+    return renderLegalPage("returns");
+  }
 
   if (path === "/") {
     return renderHome();

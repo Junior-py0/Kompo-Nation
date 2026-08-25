@@ -1098,7 +1098,7 @@ async function renderReturns() {
 async function renderCancellations() {
   const { data: requests, error } = await supabase.from("order_cancellation_requests").select("id,public_reference,reason,status,refund_amount_cents,requested_at,vendors(business_name),profiles(full_name),vendor_orders(public_reference)").order("requested_at", { ascending: false }).limit(100);
   if (error) throw error;
-  content.innerHTML = `${header("PAYMENT CONTROL", "Cancellations", "Review customer requests before recording the PayFast refund outcome.")}<section class="dashboard-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>Request</th><th>Package</th><th>Store</th><th>Customer</th><th>Value</th><th>Status</th><th>Review</th></tr></thead><tbody>${requests.map((item) => { const vendor = Array.isArray(item.vendors) ? item.vendors[0] : item.vendors; const customer = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles; const vendorOrder = Array.isArray(item.vendor_orders) ? item.vendor_orders[0] : item.vendor_orders; return `<tr><td><strong>${escapeHtml(item.public_reference)}</strong><br><small>${escapeHtml(item.reason)}</small></td><td>${escapeHtml(vendorOrder?.public_reference)}</td><td>${escapeHtml(vendor?.business_name)}</td><td>${escapeHtml(customer?.full_name || "Customer")}</td><td>${money(item.refund_amount_cents)}</td><td><span class="status-pill">${escapeHtml(item.status.replaceAll("_", " "))}</span></td><td>${item.status === "requested" ? `<button class="table-action" data-cancellation-status="${item.id}" data-next-status="under_review">Review</button>` : "Confirm in PayFast"}</td></tr>`; }).join("")}</tbody></table></div></section>`;
+  content.innerHTML = `${header("PAYMENT CONTROL", "Cancellations", "Review customer requests before recording the Paystack refund outcome.")}<section class="dashboard-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>Request</th><th>Package</th><th>Store</th><th>Customer</th><th>Value</th><th>Status</th><th>Review</th></tr></thead><tbody>${requests.map((item) => { const vendor = Array.isArray(item.vendors) ? item.vendors[0] : item.vendors; const customer = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles; const vendorOrder = Array.isArray(item.vendor_orders) ? item.vendor_orders[0] : item.vendor_orders; return `<tr><td><strong>${escapeHtml(item.public_reference)}</strong><br><small>${escapeHtml(item.reason)}</small></td><td>${escapeHtml(vendorOrder?.public_reference)}</td><td>${escapeHtml(vendor?.business_name)}</td><td>${escapeHtml(customer?.full_name || "Customer")}</td><td>${money(item.refund_amount_cents)}</td><td><span class="status-pill">${escapeHtml(item.status.replaceAll("_", " "))}</span></td><td>${item.status === "requested" ? `<button class="table-action" data-cancellation-status="${item.id}" data-next-status="under_review">Review</button>` : "Confirm in Paystack"}</td></tr>`; }).join("")}</tbody></table></div></section>`;
 }
 
 /* ========================================================================== */
@@ -1765,7 +1765,198 @@ function renderNoVendorStore() {
   </section>`;
 }
 
+
+// VENDOR_TERMS_GATE_V1
+let vendorTermsAcceptedV1 = null;
+
+
+async function ensureVendorTermsAcceptedV1() {
+
+  if (
+    area !== "vendor"
+    || !state.currentVendorId
+  ) {
+    return true;
+  }
+
+
+  if (
+    vendorTermsAcceptedV1 === true
+  ) {
+    return true;
+  }
+
+
+  const {
+    data,
+    error
+  } =
+    await supabase.rpc(
+      "has_current_terms_acceptance",
+      {
+        p_context:
+          "vendor"
+      }
+    );
+
+
+  if (error) {
+    throw error;
+  }
+
+
+  if (data === true) {
+    vendorTermsAcceptedV1 = true;
+    return true;
+  }
+
+
+  content.innerHTML = `
+    <section class="portal-alert glass terms-gate">
+
+      <p class="eyebrow">
+        VENDOR TERMS
+      </p>
+
+      <h1>
+        Accept the Vendor Clause to continue.
+      </h1>
+
+      <p>
+        Kompo Nation's Terms of Service include
+        the Vendor Clause covering marketplace
+        commission, returns, fulfilment,
+        packaging, courier collection and
+        settlement responsibilities.
+      </p>
+
+      <label class="legal-consent">
+        <input
+          id="vendor-terms-acceptance"
+          type="checkbox"
+        >
+
+        <span>
+          I am authorised to act for this store
+          and accept the current
+          <a
+            href="/terms"
+            target="_blank"
+            rel="noopener"
+          >Terms of Service and Vendor Clause</a>.
+        </span>
+      </label>
+
+      <button
+        class="primary-button"
+        id="accept-vendor-terms"
+        type="button"
+      >
+        Accept and continue
+      </button>
+
+      <p
+        class="form-message"
+        id="vendor-terms-message"
+        aria-live="polite"
+      ></p>
+
+    </section>
+  `;
+
+
+  const acceptButton =
+    document.querySelector(
+      "#accept-vendor-terms"
+    );
+
+
+  acceptButton.addEventListener(
+    "click",
+    async () => {
+
+      const checkbox =
+        document.querySelector(
+          "#vendor-terms-acceptance"
+        );
+
+      const message =
+        document.querySelector(
+          "#vendor-terms-message"
+        );
+
+
+      if (!checkbox?.checked) {
+        message.textContent =
+          "Accept the Vendor Clause before continuing.";
+
+        return;
+      }
+
+
+      acceptButton.disabled = true;
+      acceptButton.textContent =
+        "Recording acceptance…";
+
+
+      try {
+
+        const {
+          data: acceptanceId,
+          error: acceptanceError
+        } =
+          await supabase.rpc(
+            "accept_current_terms",
+            {
+              p_context:
+                "vendor"
+            }
+          );
+
+
+        if (acceptanceError) {
+          throw acceptanceError;
+        }
+
+
+        if (!acceptanceId) {
+          throw new Error(
+            "Vendor acceptance could not be recorded."
+          );
+        }
+
+
+        vendorTermsAcceptedV1 = true;
+
+        await renderView();
+
+      } catch (error) {
+
+        message.textContent =
+          error.message;
+
+        acceptButton.disabled = false;
+        acceptButton.textContent =
+          "Accept and continue";
+      }
+
+    }
+  );
+
+
+  return false;
+}
+
+
 async function renderView() {
+
+  if (
+    area === "vendor"
+    && !(await ensureVendorTermsAcceptedV1())
+  ) {
+    return;
+  }
+
   if (area === "vendor" && !state.currentVendorId) return renderNoVendorStore();
   if (state.view === "overview") return renderOverview();
   if (state.view === "stores") return renderStores();
