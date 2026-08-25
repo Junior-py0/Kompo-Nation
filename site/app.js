@@ -293,7 +293,7 @@ function renderHome() {
       <div class="hero-card">
         <img
           class="hero-image"
-          src="${assetPath("/assets/campaign-crew-v4.png")}"
+          src="${assetPath("/assets/campaign-kompo-apparel-v2.png")}"
           alt="Kompo Nation fashion campaign"
         >
 

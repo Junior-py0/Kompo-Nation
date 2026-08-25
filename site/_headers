@@ -22,3 +22,18 @@
 
 /assets/kompo-nation-mark-v1.png
   Cache-Control: public, max-age=31536000, immutable
+# KOMPO BRAND FIX V2 CACHE RULES
+/app.js
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/styles.css
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/assets/campaign-kompo-apparel-v2.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/kompo-nation-logo-transparent-v2.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/kompo-nation-mark-transparent-v2.png
+  Cache-Control: public, max-age=31536000, immutable
