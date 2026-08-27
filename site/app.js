@@ -95,7 +95,15 @@ const publicReference = (value) =>
   escapeHtml(value || "Pending reference");
 
 function setMeta(title, description) {
-  document.title = `${title} — Kompo Nation`;
+  const pageTitle =
+    String(title || "").trim();
+
+  document.title =
+    !pageTitle
+    || pageTitle === "Home"
+    || pageTitle === "Kompo Nation"
+      ? "Kompo Nation | Independent South African Fashion"
+      : `Kompo Nation | ${pageTitle}`;
 
   const tag = document.querySelector(
     'meta[name="description"]'
@@ -267,8 +275,8 @@ const productGrid = (products) =>
     : `
       <section class="empty-state glass">
         <span>◇</span>
-        <h2>Nothing is sitting here yet.</h2>
-        <p>Return soon for the next release.</p>
+        <h2>No products are available here yet.</h2>
+        <p>Check back soon for the next drop.</p>
       </section>
     `;
 
@@ -277,9 +285,8 @@ const productGrid = (products) =>
 /* ========================================================================== */
 
 function renderHome() {
-  setMeta(
-    "Wear the movement",
-    "Artist-led fashion and independent merchandise from Limpopo, delivered across South Africa."
+  setMeta("Home",
+    "Independent fashion and artist-led merchandise from Limpopo, delivered across South Africa."
   );
 
   const hotStores =
@@ -340,21 +347,21 @@ function renderHome() {
       <article>
         <strong>One bag</strong>
         <span>
-          Shop across the nation in one place
+          Shop independent stores in one place
         </span>
       </article>
 
       <article>
         <strong>Independent energy</strong>
         <span>
-          Every purchase supports a local label
+          Every order supports an independent local brand
         </span>
       </article>
 
       <article>
         <strong>Tracked delivery</strong>
         <span>
-          Courier updates from collection to arrival
+          Track your parcel from collection to delivery
         </span>
       </article>
     </section>
@@ -366,8 +373,8 @@ function renderHome() {
           <h2>The labels moving now.</h2>
 
           <p>
-            Homepage positions respond to verified sales,
-            active stock and operator curation.
+            Discover independent labels gaining momentum across Kompo Nation.
+
           </p>
         </div>
 
@@ -394,7 +401,7 @@ function renderHome() {
           <h2>Pieces with momentum.</h2>
 
           <p>
-            Best sellers rise with real demand,
+            Browse customer favourites, new releases and limited runs from across the platform.
             while available limited runs receive
             a measured lift.
           </p>
@@ -986,8 +993,8 @@ function renderCart() {
   if (!rows.length) {
     app.innerHTML = `<section class="empty-state glass">
       <span>◇</span>
-      <h1>Your bag is open.</h1>
-      <p>Find a piece from across the nation and bring it back here.</p>
+      <h1>Your bag is empty.</h1>
+      <p>Explore the marketplace and add something you love.</p>
       <a class="primary-button" href="/shop">Start shopping</a>
     </section>`;
     return;
@@ -2937,7 +2944,7 @@ function renderPaymentResult(success) {
       <h1>
         ${
           success
-            ? "Payment received for verification."
+            ? "Payment received."
             : "Payment was not completed."
         }
       </h1>
@@ -2945,7 +2952,7 @@ function renderPaymentResult(success) {
       <p>
         ${
           success
-            ? "Your account will show the order as paid only after Kompo Nation receives and verifies Paystack's payment confirmation."
+            ? "We're confirming your payment. Your order will appear as paid in your account once confirmation is complete."
             : "Your bag is still available when you are ready to try again."
         }
       </p>

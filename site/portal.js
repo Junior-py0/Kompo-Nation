@@ -52,7 +52,7 @@ async function authorize() {
   }
   if (area === "vendor" && !state.vendorIds.length) {
     const adminAction = state.isAdmin
-      ? '<a class="primary-button" href="/admin">Open admin control room</a>'
+      ? '<a class="primary-button" href="/admin">Open admin portal</a>'
       : '<a class="primary-button" href="/">Return to store</a>';
 
     gate.innerHTML = `<section class="portal-alert glass">
@@ -1770,7 +1770,7 @@ function renderNoVendorStore() {
     <h1>No vendor store is assigned.</h1>
     <p>This account needs an active Store Team membership before vendor tools can be used.</p>
     ${state.isAdmin
-      ? '<a class="primary-button" href="/admin">Open admin control room</a>'
+      ? '<a class="primary-button" href="/admin">Open admin portal</a>'
       : '<a class="primary-button" href="/">Return to storefront</a>'}
   </section>`;
 }
