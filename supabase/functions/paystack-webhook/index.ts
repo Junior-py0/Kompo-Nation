@@ -64,6 +64,53 @@ function constantTimeEqual(
   return difference === 0;
 }
 
+function metadataObject(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function isTapNationEvent(event: any): boolean {
+  const data = event?.data || {};
+  const metadata = metadataObject(data.metadata);
+  const reference = String(data.reference || "");
+  const planCode = String(
+    data?.plan?.plan_code ||
+    data?.subscription?.plan?.plan_code ||
+    data?.plan_code ||
+    "",
+  );
+  return reference.startsWith("TN-BUS-") ||
+    metadata.product === "tapnation_business" ||
+    [
+      Deno.env.get("TAPNATION_MONTHLY_PLAN_CODE"),
+      Deno.env.get("TAPNATION_ANNUAL_PLAN_CODE"),
+    ].filter(Boolean).includes(planCode);
+}
+
+async function forwardTapNationEvent(raw: string, signature: string): Promise<void> {
+  const response = await fetch(required("TAPNATION_WEBHOOK_URL"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-paystack-signature": signature,
+    },
+    body: raw,
+  });
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new Error(`TapNation webhook rejected the event (${response.status}): ${payload.slice(0, 300)}`);
+  }
+}
+
 Deno.serve(
   async (request: Request) => {
     if (
@@ -130,6 +177,13 @@ Deno.serve(
         JSON.parse(
           raw || "{}",
         );
+
+      // This Paystack business has one webhook URL. Keep Kompo's existing
+      // handler as the entry point and forward only TapNation plan events.
+      if (isTapNationEvent(event)) {
+        await forwardTapNationEvent(raw, receivedSignature);
+        return json(request, 200, { ok: true, routedTo: "tapnation" });
+      }
 
       // We only finalize successful charges.
       if (
