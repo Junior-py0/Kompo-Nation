@@ -92,6 +92,7 @@ async function loadRemoteCatalogue() {
   const [
     { data: storeRows, error: storeError },
     { data: productPayload, error: productError },
+    { data: mediaRows, error: mediaError },
   ] = await Promise.all([
     supabase
       .from("vendors")
@@ -99,11 +100,31 @@ async function loadRemoteCatalogue() {
       .eq("status", "active")
       .is("retired_at", null),
     supabase.rpc("get_storefront_products"),
+    supabase
+      .from("product_media")
+      .select("id,product_id,public_url,alt_text,sort_order,created_at")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
   ]);
 
-  if (storeError || productError) throw storeError || productError;
+  if (storeError || productError || mediaError) {
+    throw storeError || productError || mediaError;
+  }
 
   const productRows = Array.isArray(productPayload) ? productPayload : [];
+  const mediaByProduct = new Map();
+
+  (mediaRows || []).forEach((row) => {
+    if (!row.public_url) return;
+    const items = mediaByProduct.get(row.product_id) || [];
+    items.push({
+      id: row.id,
+      url: row.public_url,
+      alt: row.alt_text || "",
+      sortOrder: Number(row.sort_order || 0),
+    });
+    mediaByProduct.set(row.product_id, items);
+  });
 
   return {
     stores: (storeRows || []).map((row) => ({
@@ -121,6 +142,7 @@ async function loadRemoteCatalogue() {
     })),
 
     products: productRows.map((row) => {
+      const images = mediaByProduct.get(row.id) || [];
       const variants = (row.variants || []).map((variant) => ({
         id: variant.id,
         sku: variant.sku,
@@ -154,7 +176,8 @@ async function loadRemoteCatalogue() {
         sizes: [...new Set(activeVariants.map((variant) => variant.size))],
         colours: [...new Set(activeVariants.map((variant) => variant.colour))],
         sku: activeVariants[0]?.sku || "",
-        imageUrl: row.image_url || "",
+        imageUrl: images[0]?.url || row.image_url || "",
+        images,
         variants,
       };
     }).filter((product) => product.variants.some((variant) => variant.active)),

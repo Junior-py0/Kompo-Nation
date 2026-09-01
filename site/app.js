@@ -161,48 +161,188 @@ function updateCounts() {
 /* 02. REUSABLE STOREFRONT COMPONENTS                                         */
 /* ========================================================================== */
 
-function productVisual(product, large = false) {
-  const image = product.imageUrl
-    ? `<img src="${escapeHtml(product.imageUrl)}"
-         alt="${escapeHtml(product.name)}"
-         loading="lazy">`
+function productImages(product) {
+  const seen = new Set();
+  const images = (Array.isArray(product.images) ? product.images : [])
+    .map((item, index) => typeof item === "string"
+      ? { url: item, alt: product.name, sortOrder: index }
+      : {
+          url: item?.url || item?.public_url || "",
+          alt: item?.alt || item?.alt_text || product.name,
+          sortOrder: Number(item?.sortOrder ?? item?.sort_order ?? index),
+        })
+    .filter((item) => {
+      if (!item.url || seen.has(item.url)) return false;
+      seen.add(item.url);
+      return true;
+    })
+    .sort((left, right) => left.sortOrder - right.sortOrder);
+
+  if (!images.length && product.imageUrl) {
+    images.push({ url: product.imageUrl, alt: product.name, sortOrder: 0 });
+  }
+
+  return images;
+}
+
+function productBadges(product) {
+  return `<div class="product-badges">
+    ${product.isRare ? "<span>LIMITED</span>" : "<span>IN THE MOVEMENT</span>"}
+    <span>${product.stock} LEFT</span>
+  </div>`;
+}
+
+function productVisual(product) {
+  const images = productImages(product);
+  const media = images.length
+    ? `<div class="product-media-slides">
+        ${images.map((image, index) => `<img
+          class="product-media-slide ${index === 0 ? "is-active" : ""}"
+          data-product-slide
+          src="${escapeHtml(image.url)}"
+          alt="${escapeHtml(image.alt || product.name)}"
+          loading="lazy"
+          decoding="async"
+          draggable="false"
+          aria-hidden="${index === 0 ? "false" : "true"}"
+        >`).join("")}
+      </div>`
     : `<span class="garment-shape" aria-hidden="true"></span>`;
 
   return `
     <div
-      class="product-visual ${large ? "product-detail-visual" : ""}"
+      class="product-visual"
       style="--product-tone:${tone(product.tone)}"
+      ${images.length > 1 ? `data-product-carousel data-next-rotation="${Date.now() + 2600}" aria-label="${escapeHtml(product.name)} · ${images.length} photos"` : ""}
     >
-      ${image}
-
-      <div class="product-badges">
-        ${
-          product.isRare
-            ? "<span>LIMITED</span>"
-            : "<span>IN THE MOVEMENT</span>"
-        }
-        <span>${product.stock} LEFT</span>
-      </div>
-
-      ${
-        large
-          ? ""
-          : `
-            <button
-              class="wish-button ${
-                state.wishlist.includes(product.id)
-                  ? "active"
-                  : ""
-              }"
-              data-wish="${product.id}"
-              aria-label="Save ${escapeHtml(product.name)}"
-            >
-              ♡
-            </button>
-          `
-      }
+      ${media}
+      ${productBadges(product)}
+      ${images.length > 1 ? `<span class="product-media-count" data-product-count>1 / ${images.length}</span>` : ""}
+      <button
+        class="wish-button ${state.wishlist.includes(product.id) ? "active" : ""}"
+        data-wish="${product.id}"
+        aria-label="Save ${escapeHtml(product.name)}"
+      >♡</button>
     </div>
   `;
+}
+
+function productGallery(product) {
+  const images = productImages(product);
+
+  if (!images.length) {
+    return `<div class="product-gallery">
+      <div class="product-gallery-stage product-detail-visual" style="--product-tone:${tone(product.tone)}">
+        <span class="garment-shape" aria-hidden="true"></span>
+        ${productBadges(product)}
+      </div>
+    </div>`;
+  }
+
+  const hasMultiple = images.length > 1;
+  return `<div class="product-gallery" data-product-gallery>
+    <div class="product-gallery-stage product-detail-visual" tabindex="${hasMultiple ? "0" : "-1"}" aria-label="${escapeHtml(product.name)} product photos">
+      <img
+        data-gallery-main
+        src="${escapeHtml(images[0].url)}"
+        alt="${escapeHtml(images[0].alt || product.name)}"
+        draggable="false"
+      >
+      ${productBadges(product)}
+      ${hasMultiple ? `
+        <button class="gallery-arrow gallery-arrow-previous" type="button" data-gallery-step="-1" aria-label="Previous product photo">‹</button>
+        <button class="gallery-arrow gallery-arrow-next" type="button" data-gallery-step="1" aria-label="Next product photo">›</button>
+        <span class="gallery-count" data-gallery-count>1 / ${images.length}</span>
+      ` : ""}
+    </div>
+    ${hasMultiple ? `<div class="product-gallery-thumbnails" aria-label="Choose a product photo">
+      ${images.map((image, index) => `<button
+        class="product-gallery-thumbnail ${index === 0 ? "is-active" : ""}"
+        type="button"
+        data-gallery-index="${index}"
+        aria-label="Show photo ${index + 1} of ${images.length}"
+        aria-current="${index === 0 ? "true" : "false"}"
+      ><img src="${escapeHtml(image.url)}" alt="" loading="lazy" draggable="false"></button>`).join("")}
+    </div>` : ""}
+  </div>`;
+}
+
+function setupProductCardRotation() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  window.setInterval(() => {
+    if (document.hidden) return;
+    const now = Date.now();
+
+    document.querySelectorAll("[data-product-carousel]").forEach((carousel, cardIndex) => {
+      const slides = [...carousel.querySelectorAll("[data-product-slide]")];
+      if (slides.length < 2 || now < Number(carousel.dataset.nextRotation || 0)) return;
+
+      const bounds = carousel.getBoundingClientRect();
+      const isVisible = bounds.bottom > 0 && bounds.top < window.innerHeight && bounds.right > 0 && bounds.left < window.innerWidth;
+      const isPaused = carousel.matches(":hover") || carousel.contains(document.activeElement);
+      if (!isVisible || isPaused) return;
+
+      const current = Math.max(0, slides.findIndex((slide) => slide.classList.contains("is-active")));
+      const next = (current + 1) % slides.length;
+      slides[current].classList.remove("is-active");
+      slides[current].setAttribute("aria-hidden", "true");
+      slides[next].classList.add("is-active");
+      slides[next].setAttribute("aria-hidden", "false");
+      const count = carousel.querySelector("[data-product-count]");
+      if (count) count.textContent = `${next + 1} / ${slides.length}`;
+      carousel.dataset.nextRotation = String(now + 3800 + (cardIndex % 3) * 220);
+    });
+  }, 700);
+}
+
+function setupProductGallery(product) {
+  const gallery = document.querySelector("[data-product-gallery]");
+  const images = productImages(product);
+  if (!gallery || images.length < 2) return;
+
+  const stage = gallery.querySelector(".product-gallery-stage");
+  const mainImage = gallery.querySelector("[data-gallery-main]");
+  const count = gallery.querySelector("[data-gallery-count]");
+  const thumbnails = [...gallery.querySelectorAll("[data-gallery-index]")];
+  let current = 0;
+  let pointerStart = null;
+
+  const show = (requestedIndex) => {
+    current = (requestedIndex + images.length) % images.length;
+    const image = images[current];
+    mainImage.src = image.url;
+    mainImage.alt = image.alt || product.name;
+    count.textContent = `${current + 1} / ${images.length}`;
+    thumbnails.forEach((thumbnail, index) => {
+      const active = index === current;
+      thumbnail.classList.toggle("is-active", active);
+      thumbnail.setAttribute("aria-current", String(active));
+    });
+    thumbnails[current]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  };
+
+  gallery.querySelectorAll("[data-gallery-step]").forEach((button) => {
+    button.addEventListener("click", () => show(current + Number(button.dataset.galleryStep)));
+  });
+  thumbnails.forEach((thumbnail) => {
+    thumbnail.addEventListener("click", () => show(Number(thumbnail.dataset.galleryIndex)));
+  });
+  stage.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      show(current + (event.key === "ArrowLeft" ? -1 : 1));
+    }
+  });
+  stage.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "touch") pointerStart = event.clientX;
+  });
+  stage.addEventListener("pointerup", (event) => {
+    if (pointerStart === null || event.pointerType !== "touch") return;
+    const distance = event.clientX - pointerStart;
+    pointerStart = null;
+    if (Math.abs(distance) > 45) show(current + (distance < 0 ? 1 : -1));
+  });
 }
 
 function productCard(product) {
@@ -669,7 +809,7 @@ function renderProduct() {
     ) || sizes[0];
 
   app.innerHTML = `<section class="product-detail">
-    <div>${productVisual(product, true)}</div>
+    <div>${productGallery(product)}</div>
 
     <div class="product-detail-copy glass">
       <p class="eyebrow">${escapeHtml(store?.name || "KOMPO NATION")} · ${escapeHtml(product.category)}</p>
@@ -797,6 +937,7 @@ function renderProduct() {
   });
 
   drawColours();
+  setupProductGallery(product);
 }
 
 
@@ -3093,33 +3234,41 @@ function setupHeader() {
     .textContent =
       new Date().getFullYear();
 
-  document
-    .querySelector("#menu-button")
-    .addEventListener(
-      "click",
-      (event) => {
-        const nav =
-          document.querySelector(".main-nav");
+  const header = document.querySelector("#site-header");
+  const nav = document.querySelector(".main-nav");
+  const menuButton = document.querySelector("#menu-button");
+  const setMenuOpen = (open, returnFocus = false) => {
+    nav.classList.toggle("open", open);
+    menuButton.classList.toggle("is-open", open);
+    menuButton.setAttribute("aria-expanded", String(open));
+    menuButton.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    menuButton.innerHTML = open
+      ? '<span aria-hidden="true">×</span> Close'
+      : '<span aria-hidden="true">☰</span> Menu';
+    if (!open && returnFocus) menuButton.focus();
+  };
 
-        nav.classList.toggle("open");
-
-        event.currentTarget.setAttribute(
-          "aria-expanded",
-          String(
-            nav.classList.contains("open")
-          )
-        );
-      }
-    );
+  menuButton.addEventListener("click", () => setMenuOpen(!nav.classList.contains("open")));
+  nav.querySelectorAll("a").forEach((link) => link.addEventListener("click", () => setMenuOpen(false)));
+  document.addEventListener("pointerdown", (event) => {
+    if (nav.classList.contains("open") && !header.contains(event.target)) setMenuOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && nav.classList.contains("open")) setMenuOpen(false, true);
+  });
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 1050 && nav.classList.contains("open")) setMenuOpen(false);
+  });
 
   const dialog =
     document.querySelector("#search-dialog");
 
   document
-    .querySelector("#search-button")
-    .addEventListener(
+    .querySelectorAll("#search-button, [data-mobile-search]")
+    .forEach((button) => button.addEventListener(
       "click",
       () => {
+        setMenuOpen(false);
         dialog.showModal();
 
         setTimeout(
@@ -3130,7 +3279,7 @@ function setupHeader() {
           50
         );
       }
-    );
+    ));
 
   document
     .querySelector("#global-search")
@@ -4448,6 +4597,8 @@ async function start() {
   setupHeader();
 
   setupDelegatedEvents();
+
+  setupProductCardRotation();
 
   updateCounts();
 

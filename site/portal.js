@@ -97,10 +97,34 @@ function setActiveView(view) {
 }
 
 function setupShell() {
+  const sidebar = document.querySelector("#portal-sidebar");
+  const menuButton = document.querySelector("#portal-menu");
+  const closeButton = document.querySelector("#portal-menu-close");
+  const backdrop = document.querySelector("#portal-menu-backdrop");
+
+  const setMenuOpen = (open, returnFocus = false) => {
+    sidebar.classList.toggle("open", open);
+    menuButton.setAttribute("aria-expanded", String(open));
+    backdrop.hidden = !open;
+    document.body.classList.toggle("portal-menu-open", open);
+    if (!open && returnFocus) menuButton.focus();
+  };
+
   document.querySelector("#portal-identity").textContent = state.session.user.email;
-  document.querySelectorAll("#portal-nav [data-view]").forEach((button) => button.addEventListener("click", () => setActiveView(button.dataset.view)));
+  document.querySelectorAll("#portal-nav [data-view]").forEach((button) => button.addEventListener("click", () => {
+    setActiveView(button.dataset.view);
+    setMenuOpen(false);
+  }));
   document.querySelector("#signout-button").addEventListener("click", async () => { await signOut(); location.href = location.protocol === "file:" ? "./index.html" : "/"; });
-  document.querySelector("#portal-menu").addEventListener("click", () => document.querySelector(".portal-sidebar").classList.toggle("open"));
+  menuButton.addEventListener("click", () => setMenuOpen(!sidebar.classList.contains("open")));
+  closeButton.addEventListener("click", () => setMenuOpen(false, true));
+  backdrop.addEventListener("click", () => setMenuOpen(false, true));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && sidebar.classList.contains("open")) setMenuOpen(false, true);
+  });
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 820 && sidebar.classList.contains("open")) setMenuOpen(false);
+  });
   content.addEventListener("change", (event) => {
     if (event.target.id === "store-selector") { state.currentVendorId = event.target.value; renderView().catch(showError); }
   });
@@ -245,7 +269,7 @@ async function loadStoreTeamPanel(vendorId) {
 async function renderStores() {
   const { data: stores, error } = await supabase
     .from("vendors")
-    .select("id,business_name,slug,status,commission_rate_bps,is_platform_owned,sales_count,featured_override,short_description,description,mark,accent,vendor_private_settings(contact_email)")
+    .select("id,business_name,slug,status,commission_rate_bps,is_platform_owned,sales_count,featured_override,short_description,description,mark,accent,vendor_private_settings(contact_email,contact_phone,collection_street_address,collection_local_area,collection_city,collection_province,collection_postal_code,collection_country_code)")
     .order("business_name")
     .is("retired_at", null);
 
@@ -305,6 +329,42 @@ async function renderStores() {
           <label>Full store description
             <textarea data-store-description="${store.id}">${escapeHtml(store.description || "")}</textarea>
           </label>
+
+          <section class="store-address-editor">
+            <div class="terminal-section-heading">
+              <div>
+                <h3>Collection address</h3>
+                <p>Used for Bob Go quotes and courier collections for this store.</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              <label>Contact phone
+                <input data-store-phone="${store.id}" value="${escapeHtml(privateRow?.contact_phone || "")}" required>
+              </label>
+              <label>Country
+                <input value="South Africa" disabled>
+              </label>
+            </div>
+            <label>Street address
+              <input data-store-street="${store.id}" value="${escapeHtml(privateRow?.collection_street_address || "")}" required>
+            </label>
+            <div class="form-grid">
+              <label>Area / suburb
+                <input data-store-area="${store.id}" value="${escapeHtml(privateRow?.collection_local_area || "")}">
+              </label>
+              <label>City
+                <input data-store-city="${store.id}" value="${escapeHtml(privateRow?.collection_city || "")}" required>
+              </label>
+            </div>
+            <div class="form-grid">
+              <label>Province
+                <input data-store-province="${store.id}" value="${escapeHtml(privateRow?.collection_province || "")}" required>
+              </label>
+              <label>Postal code
+                <input data-store-postal="${store.id}" inputmode="numeric" value="${escapeHtml(privateRow?.collection_postal_code || "")}" required>
+              </label>
+            </div>
+          </section>
 
           <div class="form-grid">
             <label>Brand palette
@@ -1539,6 +1599,7 @@ async function handlePortalClick(event) {
   const saveStore = event.target.closest("[data-save-store]");
   if (saveStore) {
     const id = saveStore.dataset.saveStore;
+    const fieldValue = (field) => document.querySelector(`[data-store-${field}="${CSS.escape(id)}"]`).value.trim();
     const featuredChoice = document.querySelector(`[data-store-featured="${CSS.escape(id)}"]`).value;
     const featuredOverride = featuredChoice === "pinned"
       ? true
@@ -1548,21 +1609,42 @@ async function handlePortalClick(event) {
 
     saveStore.disabled = true;
     try {
+      const privateSettings = {
+        contact_email: fieldValue("email").toLowerCase(),
+        contact_phone: fieldValue("phone"),
+        collection_street_address: fieldValue("street"),
+        collection_local_area: fieldValue("area"),
+        collection_city: fieldValue("city"),
+        collection_province: fieldValue("province"),
+        collection_postal_code: fieldValue("postal"),
+        collection_country_code: "ZA",
+      };
+
+      if (!privateSettings.contact_phone || !privateSettings.collection_street_address || !privateSettings.collection_city || !privateSettings.collection_province || !privateSettings.collection_postal_code) {
+        throw new Error("Complete the store's contact phone and collection address before saving.");
+      }
+
       const { error } = await supabase.rpc("admin_update_vendor_v2", {
         p_vendor_id: id,
-        p_business_name: document.querySelector(`[data-store-name="${CSS.escape(id)}"]`).value.trim(),
-        p_contact_email: document.querySelector(`[data-store-email="${CSS.escape(id)}"]`).value.trim().toLowerCase(),
+        p_business_name: fieldValue("name"),
+        p_contact_email: privateSettings.contact_email,
         p_commission_rate_bps: Math.round(Number(document.querySelector(`[data-store-commission="${CSS.escape(id)}"]`).value) * 100),
-        p_short_description: document.querySelector(`[data-store-short="${CSS.escape(id)}"]`).value.trim(),
-        p_description: document.querySelector(`[data-store-description="${CSS.escape(id)}"]`).value.trim(),
-        p_mark: document.querySelector(`[data-store-mark="${CSS.escape(id)}"]`).value.trim().toUpperCase(),
+        p_short_description: fieldValue("short"),
+        p_description: fieldValue("description"),
+        p_mark: fieldValue("mark").toUpperCase(),
         p_accent: document.querySelector(`[data-store-accent="${CSS.escape(id)}"]`).value,
         p_is_platform_owned: document.querySelector(`[data-store-platform-owned="${CSS.escape(id)}"]`).checked,
         p_featured_override: featuredOverride,
       });
 
       if (error) throw error;
-      toast("Store settings saved.");
+      const { error: privateError } = await supabase
+        .from("vendor_private_settings")
+        .update(privateSettings)
+        .eq("vendor_id", id);
+      if (privateError) throw privateError;
+
+      toast("Store details and collection address saved.");
       return renderStores();
     } catch (error) {
       toast(error.message);
