@@ -428,7 +428,7 @@ Deno.serve(
 
       const order =
         await rpc(
-          "create_payment_checkout",
+          "create_payment_checkout_v3",
           {
             p_provider:
               paymentProvider,
@@ -447,6 +447,12 @@ Deno.serve(
 
             p_quotes:
               body.quotes,
+
+            p_discount_code:
+              String(
+                body.discountCode ||
+                "",
+              ).trim() || null,
           },
         );
 
@@ -566,6 +572,16 @@ Deno.serve(
           metadata: {
             payment_kind:
               "marketplace_order",
+
+            discount_code:
+              order.discountCode ||
+              undefined,
+
+            discount_total_cents:
+              Number(
+                order.discountTotalCents ||
+                0,
+              ),
 
             settlement_mode:
               paymentProvider !== "paystack"

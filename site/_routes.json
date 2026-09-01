@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "include": ["/", "/shop", "/stores", "/about", "/delivery", "/returns", "/contact", "/privacy", "/terms", "/sitemap.xml", "/product/*", "/store/*"],
+  "exclude": []
+}

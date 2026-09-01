@@ -14,6 +14,7 @@ const state = {
   stores: LOCAL_STORES,
   cart: readStorage("kompo-cart", []),
   wishlist: readStorage("kompo-wishlist", []),
+  appliedDiscount: null,
 };
 
 function readStorage(key, fallback) {
@@ -94,7 +95,7 @@ const tone = (name) => ({
 const publicReference = (value) =>
   escapeHtml(value || "Pending reference");
 
-function setMeta(title, description) {
+function setMeta(title, description, options = {}) {
   const pageTitle =
     String(title || "").trim();
 
@@ -103,15 +104,91 @@ function setMeta(title, description) {
     || pageTitle === "Home"
     || pageTitle === "Kompo Nation"
       ? "Kompo Nation | Independent South African Fashion"
-      : `Kompo Nation | ${pageTitle}`;
+      : `${pageTitle} | Kompo Nation`;
 
-  const tag = document.querySelector(
-    'meta[name="description"]'
-  );
+  const upsertMeta = (selector, attributes) => {
+    let tag = document.querySelector(selector);
+    if (!tag) {
+      tag = document.createElement("meta");
+      document.head.append(tag);
+    }
+    Object.entries(attributes).forEach(([name, value]) => tag.setAttribute(name, value));
+  };
 
-  if (tag) {
-    tag.setAttribute("content", description);
+  const routePath = currentRoute().path;
+  const canonicalUrl = `${CONFIG.siteUrl}${routePath === "/" ? "/" : routePath}`;
+  const imageUrl = new URL(options.image || "/assets/campaign-kompo-apparel-v2.png", CONFIG.siteUrl).href;
+  const robots = options.robots || "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
+  const fullTitle = document.title;
+
+  upsertMeta('meta[name="description"]', { name: "description", content: description });
+  upsertMeta('meta[name="robots"]', { name: "robots", content: robots });
+  upsertMeta('meta[property="og:title"]', { property: "og:title", content: fullTitle });
+  upsertMeta('meta[property="og:description"]', { property: "og:description", content: description });
+  upsertMeta('meta[property="og:type"]', { property: "og:type", content: options.type || "website" });
+  upsertMeta('meta[property="og:url"]', { property: "og:url", content: canonicalUrl });
+  upsertMeta('meta[property="og:image"]', { property: "og:image", content: imageUrl });
+  upsertMeta('meta[name="twitter:card"]', { name: "twitter:card", content: "summary_large_image" });
+  upsertMeta('meta[name="twitter:title"]', { name: "twitter:title", content: fullTitle });
+  upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: description });
+  upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: imageUrl });
+
+  let canonical = document.querySelector('link[rel="canonical"]');
+  if (!canonical) {
+    canonical = document.createElement("link");
+    canonical.rel = "canonical";
+    document.head.append(canonical);
   }
+  canonical.href = canonicalUrl;
+}
+
+function setStructuredData(data) {
+  let script = document.querySelector("#kompo-structured-data");
+  if (!script) {
+    script = document.createElement("script");
+    script.id = "kompo-structured-data";
+    script.type = "application/ld+json";
+    document.head.append(script);
+  }
+  script.textContent = JSON.stringify(data).replace(/</g, "\\u003c");
+}
+
+function storeSearchAliases(store) {
+  const compact = `${store?.name || ""} ${store?.slug || ""}`.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return compact.includes("letwosix") || compact.includes("le26")
+    ? ["Le Two Six", "Le 26"]
+    : [];
+}
+
+function productStructuredData(product, store) {
+  const canonical = `${CONFIG.siteUrl}/product/${encodeURIComponent(product.slug)}`;
+  const aliases = storeSearchAliases(store);
+  return {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "@id": `${canonical}#product`,
+    name: product.name,
+    description: product.description,
+    category: product.category,
+    url: canonical,
+    image: productImages(product).map((image) => new URL(image.url, CONFIG.siteUrl).href),
+    sku: productVariants(product)[0]?.sku,
+    brand: {
+      "@type": "Brand",
+      name: store?.name || "Kompo Nation",
+      ...(aliases.length ? { alternateName: aliases } : {}),
+    },
+    offers: productVariants(product).map((variant) => ({
+      "@type": "Offer",
+      url: canonical,
+      priceCurrency: CONFIG.currency,
+      price: (Number(variant.priceCents) / 100).toFixed(2),
+      availability: Number(variant.stock) > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      itemCondition: "https://schema.org/NewCondition",
+      sku: variant.sku,
+      seller: { "@type": "Organization", name: store?.name || "Kompo Nation" },
+    })),
+  };
 }
 
 function showToast(message) {
@@ -131,6 +208,8 @@ function showToast(message) {
 }
 
 function saveCommerceState() {
+  state.appliedDiscount = null;
+
   localStorage.setItem(
     "kompo-cart",
     JSON.stringify(state.cart)
@@ -428,6 +507,13 @@ function renderHome() {
   setMeta("Home",
     "Independent fashion and artist-led merchandise from Limpopo, delivered across South Africa."
   );
+  setStructuredData({
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "Organization", "@id": `${CONFIG.siteUrl}/#organization`, name: "Kompo Nation", url: `${CONFIG.siteUrl}/`, logo: `${CONFIG.siteUrl}/assets/kompo-nation-logo-transparent-v2.png` },
+      { "@type": "WebSite", "@id": `${CONFIG.siteUrl}/#website`, name: "Kompo Nation", url: `${CONFIG.siteUrl}/`, publisher: { "@id": `${CONFIG.siteUrl}/#organization` } },
+    ],
+  });
 
   const hotStores =
     rankStores(state.stores).slice(0, 5);
@@ -595,7 +681,6 @@ function renderShop() {
     "Shop",
     "Shop independent fashion, limited artist merchandise and Kompo Nation essentials."
   );
-
   const category =
     new URLSearchParams(currentRoute().search)
       .get("category") || "All";
@@ -615,6 +700,16 @@ function renderShop() {
         category === "All" ||
         product.category === category
     );
+  setStructuredData({
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: "Shop independent South African fashion",
+    url: `${CONFIG.siteUrl}/shop`,
+    mainEntity: {
+      "@type": "ItemList",
+      itemListElement: products.map((product, index) => ({ "@type": "ListItem", position: index + 1, name: product.name, url: `${CONFIG.siteUrl}/product/${encodeURIComponent(product.slug)}` })),
+    },
+  });
 
   app.innerHTML = `
     <section class="page-hero">
@@ -661,6 +756,16 @@ function renderStores() {
   );
 
   const stores = rankStores(state.stores);
+  setStructuredData({
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: "Independent stores on Kompo Nation",
+    url: `${CONFIG.siteUrl}/stores`,
+    mainEntity: {
+      "@type": "ItemList",
+      itemListElement: stores.map((store, index) => ({ "@type": "ListItem", position: index + 1, name: store.name, url: `${CONFIG.siteUrl}/store/${encodeURIComponent(store.slug)}` })),
+    },
+  });
 
   app.innerHTML = `
     <section class="page-hero">
@@ -700,10 +805,9 @@ function renderStore() {
     return renderNotFound();
   }
 
-  setMeta(
-    store.name,
-    store.shortDescription
-  );
+  const aliases = storeSearchAliases(store);
+  const storeDescription = `${store.shortDescription}${aliases.length ? ` Also known as ${aliases.join(" and ")}.` : ""} Shop ${store.name} clothing and products on Kompo Nation.`;
+  setMeta(`${store.name} Clothing & Products`, storeDescription);
 
   const products =
     rankProducts(
@@ -712,6 +816,14 @@ function renderStore() {
           product.vendorId === store.id
       )
     );
+  const canonical = `${CONFIG.siteUrl}/store/${encodeURIComponent(store.slug)}`;
+  setStructuredData({
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "Brand", "@id": `${canonical}#brand`, name: store.name, ...(aliases.length ? { alternateName: aliases } : {}), description: store.description, url: canonical },
+      { "@type": "CollectionPage", "@id": `${canonical}#page`, name: `${store.name} store on Kompo Nation`, description: storeDescription, url: canonical, mainEntity: { "@type": "ItemList", numberOfItems: products.length, itemListElement: products.map((product, index) => ({ "@type": "ListItem", position: index + 1, name: product.name, url: `${CONFIG.siteUrl}/product/${encodeURIComponent(product.slug)}` })) } },
+    ],
+  });
 
   app.innerHTML = `
     <section
@@ -788,8 +900,14 @@ function renderProduct() {
   const product = state.products.find((item) => item.slug === slugPart(1));
   if (!product) return renderNotFound();
 
-  setMeta(product.name, product.description);
   const store = storeFor(product);
+  const aliases = storeSearchAliases(store);
+  setMeta(
+    `${product.name} by ${store?.name || "Kompo Nation"}`,
+    `Shop ${product.name} by ${store?.name || "Kompo Nation"}${aliases.length ? `, also searched as ${aliases.join(" and ")}` : ""}. ${product.description}`,
+    { image: productImages(product)[0]?.url, type: "product" }
+  );
+  setStructuredData(productStructuredData(product, store));
   const variants = productVariants(product);
 
   if (!variants.length) {
@@ -942,6 +1060,8 @@ function renderProduct() {
 
 
 function renderAbout() {
+  setMeta("About", "Meet Kompo Nation, the marketplace helping independent South African artists and fashion labels reach fans nationwide.");
+  setStructuredData({ "@context": "https://schema.org", "@type": "AboutPage", name: "About Kompo Nation", url: `${CONFIG.siteUrl}/about` });
   app.innerHTML = `
     <section class="page-hero">
       <div>
@@ -1018,6 +1138,8 @@ function renderInformation(type) {
   };
 
   const [title, copy] = pages[type];
+  setMeta(title, copy);
+  setStructuredData({ "@context": "https://schema.org", "@type": "WebPage", name: title, description: copy, url: `${CONFIG.siteUrl}/${type}` });
 
   app.innerHTML = `
     <section class="page-hero">
@@ -1230,6 +1352,89 @@ function renderCart() {
 // CHECKOUT_REVIEW_FLOW_V1
 // CUSTOMER_HIDE_COLLECTION_CUTOFF_V2
 let pendingCheckoutReview = null;
+
+const checkoutLines = () => state.cart.map(({
+  productId,
+  quantity,
+  size,
+  colour
+}) => ({ productId, quantity, size, colour }));
+
+function syncDiscountSummary(subtotal) {
+  const discount = state.appliedDiscount;
+  const amount = Math.max(0, Number(discount?.discountCents || 0));
+  const line = document.querySelector("#checkout-discount-line");
+  const beforeDelivery = document.querySelector("#checkout-before-delivery");
+  const message = document.querySelector("#discount-code-message");
+  const removeButton = document.querySelector("#remove-discount-code");
+  const input = document.querySelector("#discount-code-input");
+
+  if (line) {
+    line.hidden = !discount;
+    line.innerHTML = discount
+      ? `<span>${escapeHtml(discount.code)} · ${escapeHtml(discount.storeName)}</span><strong>−${money(amount)}</strong>`
+      : "";
+  }
+  if (beforeDelivery) beforeDelivery.textContent = money(Math.max(0, subtotal - amount));
+  if (removeButton) removeButton.hidden = !discount;
+  if (input && discount) input.value = discount.code;
+  if (message && discount) {
+    message.textContent = `${discount.code} applied to ${discount.storeName}: ${money(amount)} off. ${discount.remainingUses} use${Number(discount.remainingUses) === 1 ? "" : "s"} remaining.`;
+  }
+}
+
+async function applyCheckoutDiscount(subtotal) {
+  const input = document.querySelector("#discount-code-input");
+  const button = document.querySelector("#apply-discount-code");
+  const message = document.querySelector("#discount-code-message");
+  const code = String(input?.value || "").trim().toUpperCase();
+
+  if (!code) {
+    message.textContent = "Enter a discount code.";
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Checking…";
+  message.textContent = "";
+
+  try {
+    const { data, error } = await supabase.rpc("preview_discount_code", {
+      p_code: code,
+      p_lines: checkoutLines(),
+    });
+    if (error) throw error;
+    if (!data?.valid || !Number(data.discountCents)) throw new Error("This code did not return a valid discount.");
+    state.appliedDiscount = data;
+    syncDiscountSummary(subtotal);
+  } catch (error) {
+    state.appliedDiscount = null;
+    syncDiscountSummary(subtotal);
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Apply";
+  }
+}
+
+function bindCheckoutDiscountControls(subtotal) {
+  document.querySelector("#apply-discount-code")?.addEventListener("click", () => applyCheckoutDiscount(subtotal));
+  document.querySelector("#discount-code-input")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyCheckoutDiscount(subtotal);
+    }
+  });
+  document.querySelector("#remove-discount-code")?.addEventListener("click", () => {
+    state.appliedDiscount = null;
+    const input = document.querySelector("#discount-code-input");
+    if (input) input.value = "";
+    const message = document.querySelector("#discount-code-message");
+    if (message) message.textContent = "Discount code removed.";
+    syncDiscountSummary(subtotal);
+  });
+  syncDiscountSummary(subtotal);
+}
 
 async function renderCheckout() {
   if (restoreLegalCheckout()) return;
@@ -1514,10 +1719,30 @@ async function renderCheckout() {
             .join("")
         }
 
-        <div class="summary-line summary-total">
-          <span>Before delivery</span>
+        <div class="summary-line">
+          <span>Merchandise subtotal</span>
           <strong>${money(subtotal)}</strong>
         </div>
+
+        <div class="summary-line checkout-discount-line" id="checkout-discount-line" hidden></div>
+
+        <div class="summary-line summary-total">
+          <span>Before delivery</span>
+          <strong id="checkout-before-delivery">${money(subtotal)}</strong>
+        </div>
+
+        <section class="discount-code-box" aria-labelledby="discount-code-heading">
+          <div>
+            <strong id="discount-code-heading">Discount code</strong>
+            <small>Codes apply only to merchandise from the issuing store.</small>
+          </div>
+          <div class="discount-code-row">
+            <input id="discount-code-input" autocomplete="off" maxlength="32" placeholder="Enter code" value="${escapeHtml(state.appliedDiscount?.code || "")}">
+            <button class="table-action" id="apply-discount-code" type="button">Apply</button>
+          </div>
+          <button class="discount-remove-button" id="remove-discount-code" type="button" hidden>Remove code</button>
+          <p class="form-message" id="discount-code-message" aria-live="polite"></p>
+        </section>
 
         <p>
           <small>
@@ -1584,6 +1809,8 @@ async function renderCheckout() {
     "submit",
     beginCheckout
   );
+
+  bindCheckoutDiscountControls(subtotal);
 }
 
 
@@ -1775,20 +2002,7 @@ async function beginCheckout(event) {
       }
     }
 
-    const lines =
-      state.cart.map(
-        ({
-          productId,
-          quantity,
-          size,
-          colour
-        }) => ({
-          productId,
-          quantity,
-          size,
-          colour
-        })
-      );
+    const lines = checkoutLines();
 
     const headers = {
       "Content-Type":
@@ -1843,6 +2057,18 @@ async function beginCheckout(event) {
         0
       );
 
+    let discount = state.appliedDiscount;
+    if (discount?.code) {
+      const { data, error: discountError } = await supabase.rpc("preview_discount_code", {
+        p_code: discount.code,
+        p_lines: lines,
+      });
+      if (discountError) throw discountError;
+      discount = data;
+      state.appliedDiscount = data;
+    }
+    const discountCents = Math.max(0, Number(discount?.discountCents || 0));
+
     const courierDelivery =
       quotes.reduce(
         (sum, quote) =>
@@ -1880,7 +2106,8 @@ async function beginCheckout(event) {
       );
 
     const totalDue =
-      subtotal +
+      subtotal -
+      discountCents +
       totalDelivery;
 
     pendingCheckoutReview = {
@@ -1889,7 +2116,10 @@ async function beginCheckout(event) {
       contact,
       quotes,
       subtotal,
-      totalDelivery
+      totalDelivery,
+      discountCode: discount?.code || null,
+      discount,
+      discountCents,
     };
 
     const courierLines =
@@ -1976,6 +2206,21 @@ async function beginCheckout(event) {
           )
           .join("")
       }
+
+      <div class="summary-line">
+        <span>Merchandise subtotal</span>
+        <strong>${money(subtotal)}</strong>
+      </div>
+
+      ${discount ? `<div class="summary-line checkout-discount-line">
+        <span>${escapeHtml(discount.code)} · ${escapeHtml(discount.storeName)}</span>
+        <strong>−${money(discountCents)}</strong>
+      </div>` : ""}
+
+      <div class="summary-line">
+        <span>Merchandise after discount</span>
+        <strong>${money(subtotal - discountCents)}</strong>
+      </div>
 
       <div class="checkout-review-divider"></div>
 
@@ -2172,16 +2417,14 @@ async function continueCheckoutToPayment() {
           method: "POST",
           headers,
           body: JSON.stringify({
-            lines:
-              pending.lines,
-            address:
-              pending.address,
-            contact:
-              pending.contact,
+            lines: pending.lines,
+            address: pending.address,
+            contact: pending.contact,
             quotes: pending.quotes,
-          termsVersion:
-            CURRENT_TERMS_VERSION,
-          termsAcceptanceId,})
+            discountCode: pending.discountCode,
+            termsVersion: CURRENT_TERMS_VERSION,
+            termsAcceptanceId,
+          })
         }
       );
 
@@ -3113,6 +3356,8 @@ function renderPaymentResult(success) {
 }
 
 function renderNotFound() {
+  setMeta("Page not found", "This Kompo Nation page could not be found.", { robots: "noindex, nofollow" });
+  setStructuredData({ "@context": "https://schema.org", "@type": "WebPage", name: "Page not found" });
   app.innerHTML = `
     <section class="empty-state glass">
       <span>404</span>
@@ -3496,7 +3741,7 @@ document.addEventListener("click",(e)=>{const x=e.target.closest('a[href="/terms
 function legalContext(){try{return JSON.parse(sessionStorage.getItem(LEGAL_CTX)||"null")}catch{return null}}
 function returnFromLegal(){const c=legalContext();if(c?.path?.startsWith("/checkout"))sessionStorage.setItem(LEGAL_RESTORE,"1");if(history.length>1){history.back();return}location.href=c?.path||"/"}
 function legalReturnButton(){const c=legalContext();return `<section class="legal-return-panel"><button class="primary-button" id="legal-return-button" type="button">${escapeHtml(c?.label||"Return to home")}</button></section>`}
-function restoreLegalCheckout(){if(sessionStorage.getItem(LEGAL_RESTORE)!=="1")return false;sessionStorage.removeItem(LEGAL_RESTORE);let s=null;try{s=JSON.parse(sessionStorage.getItem(LEGAL_SNAP)||"null")}catch{}sessionStorage.removeItem(LEGAL_SNAP);const expiries=(s?.pending?.quotes||[]).map(q=>Date.parse(q?.expiresAt||"")).filter(Number.isFinite);if(!s?.pending||!s?.html||!expiries.length||Math.min(...expiries)<=Date.now())return false;pendingCheckoutReview=s.pending;app.innerHTML=s.html;document.querySelector("#continue-secure-payment")?.addEventListener("click",continueCheckoutToPayment);document.querySelector("#change-delivery-details")?.addEventListener("click",()=>renderCheckout());return true}
+function restoreLegalCheckout(){if(sessionStorage.getItem(LEGAL_RESTORE)!=="1")return false;sessionStorage.removeItem(LEGAL_RESTORE);let s=null;try{s=JSON.parse(sessionStorage.getItem(LEGAL_SNAP)||"null")}catch{}sessionStorage.removeItem(LEGAL_SNAP);const expiries=(s?.pending?.quotes||[]).map(q=>Date.parse(q?.expiresAt||"")).filter(Number.isFinite);if(!s?.pending||!s?.html||!expiries.length||Math.min(...expiries)<=Date.now())return false;pendingCheckoutReview=s.pending;state.appliedDiscount=s.pending.discount||null;app.innerHTML=s.html;document.querySelector("#continue-secure-payment")?.addEventListener("click",continueCheckoutToPayment);document.querySelector("#change-delivery-details")?.addEventListener("click",()=>renderCheckout());return true}
 const KOMPO_LEGAL_PAGES = {
 
   terms: {
@@ -4445,6 +4690,8 @@ function renderLegalPage(kind) {
   if (!page) {
     return renderNotFound();
   }
+  setMeta(page.title, `${page.title} for customers, vendors and visitors using Kompo Nation.`);
+  setStructuredData({ "@context": "https://schema.org", "@type": "WebPage", name: page.title, url: `${CONFIG.siteUrl}/${kind}` });
 
 
   app.innerHTML = `
@@ -4515,6 +4762,11 @@ function renderLegalPage(kind) {
 async function renderRoute() {
   const { path } =
     currentRoute();
+
+  if (["/cart", "/checkout", "/wishlist", "/account", "/payment-success", "/payment-cancelled"].includes(path)) {
+    setMeta("Private page", "Secure Kompo Nation customer page.", { robots: "noindex, nofollow" });
+    setStructuredData({ "@context": "https://schema.org", "@type": "WebPage", name: "Kompo Nation customer page" });
+  }
 
   if (path === "/terms") {
     return renderLegalPage("terms");

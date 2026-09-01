@@ -760,6 +760,107 @@ async function renderProducts() {
     <section class="terminal-product-list">${productCards || '<section class="dashboard-panel"><p>No products yet.</p></section>'}</section>`;
 }
 
+/* ========================================================================== */
+/* 05B. STORE DISCOUNT CODES                                                  */
+/* ========================================================================== */
+function dateTimeLocalValue(value = new Date()) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+}
+
+async function renderDiscounts() {
+  let query = supabase
+    .from("discount_codes")
+    .select("id,vendor_id,code,name,discount_type,percentage_bps,fixed_amount_cents,minimum_subtotal_cents,usage_limit,used_count,starts_at,expires_at,active,created_at,vendors(business_name),discount_redemptions(status,expires_at)")
+    .order("created_at", { ascending: false });
+  if (area === "vendor") query = query.eq("vendor_id", state.currentVendorId);
+  const { data: codes, error } = await query;
+  if (error) throw error;
+
+  const now = Date.now();
+  const cards = (codes || []).map((code) => {
+    const vendor = Array.isArray(code.vendors) ? code.vendors[0] : code.vendors;
+    const activeReservations = (code.discount_redemptions || []).filter((item) => item.status === "reserved" && Date.parse(item.expires_at) > now).length;
+    const remaining = Math.max(0, Number(code.usage_limit) - Number(code.used_count) - activeReservations);
+    const expired = code.expires_at && Date.parse(code.expires_at) <= now;
+    const upcoming = Date.parse(code.starts_at) > now;
+    const status = !code.active ? "inactive" : expired ? "expired" : upcoming ? "scheduled" : remaining < 1 ? "used up" : "active";
+    const value = code.discount_type === "percentage"
+      ? `${(Number(code.percentage_bps) / 100).toFixed(Number(code.percentage_bps) % 100 ? 2 : 0)}% off`
+      : `${money(code.fixed_amount_cents)} off`;
+
+    return `<article class="discount-code-card">
+      <div class="discount-code-heading">
+        <div>
+          <p class="eyebrow">${escapeHtml(vendor?.business_name || "STORE")}</p>
+          <h2>${escapeHtml(code.code)}</h2>
+          <p>${escapeHtml(code.name || value)} · ${value}</p>
+        </div>
+        <span class="status-pill">${escapeHtml(status)}</span>
+      </div>
+      <div class="discount-code-metrics">
+        <div><span>Used</span><strong>${Number(code.used_count)}</strong></div>
+        <div><span>Reserved</span><strong>${activeReservations}</strong></div>
+        <div><span>Remaining</span><strong>${remaining}</strong></div>
+        <div><span>Limit</span><strong>${Number(code.usage_limit)}</strong></div>
+      </div>
+      <p><small>Minimum eligible store spend: ${money(code.minimum_subtotal_cents)}${code.expires_at ? ` · Ends ${new Date(code.expires_at).toLocaleString(CONFIG.locale)}` : " · No expiry"}</small></p>
+      <div class="terminal-actions">
+        <button class="table-action" type="button" data-copy-discount="${escapeHtml(code.code)}">Copy code</button>
+        <button class="table-action" type="button" data-toggle-discount="${code.id}" data-next-active="${code.active ? "false" : "true"}">${code.active ? "Deactivate" : "Activate"}</button>
+      </div>
+    </article>`;
+  }).join("");
+
+  const vendorOptions = (area === "admin" ? state.stores : state.stores.filter((store) => store.id === state.currentVendorId))
+    .map((store) => `<option value="${store.id}" ${store.id === state.currentVendorId ? "selected" : ""}>${escapeHtml(store.business_name)}</option>`).join("");
+  const starts = dateTimeLocalValue(new Date());
+  const expires = dateTimeLocalValue(new Date(Date.now() + 30 * 86400000));
+
+  content.innerHTML = `${header(
+    "STORE PROMOTIONS",
+    "Discount codes",
+    area === "admin" ? "Create a code for any store and track its live usage." : "Create codes only for this store. Store owners and managers can issue promotions.",
+    '<button class="primary-button" data-toggle-form="discount-form">Create code</button>'
+  )}
+    <section class="dashboard-panel" id="discount-form" hidden>
+      <div class="panel-heading"><div><h2>Create a store code</h2><p>Leave Code blank to generate a unique store-branded code automatically.</p></div></div>
+      <form class="stack-form dashboard-form" data-form="discount-code">
+        <label>Store<select name="vendor_id" required>${vendorOptions}</select></label>
+        <div class="form-grid">
+          <label>Code (optional)<input name="code" maxlength="32" placeholder="Auto-generate"></label>
+          <label>Internal campaign name<input name="name" maxlength="80" placeholder="Launch sale"></label>
+        </div>
+        <div class="form-grid">
+          <label>Discount type<select name="discount_type" data-discount-type><option value="percentage">Percentage</option><option value="fixed">Fixed rand amount</option></select></label>
+          <label data-percentage-field>Percentage off<input name="percentage" type="number" min="0.01" max="100" step="0.01" value="10"></label>
+          <label data-fixed-field hidden>Rand amount off<input name="fixed_rand" type="number" min="0.01" step="0.01" value="50"></label>
+        </div>
+        <div class="form-grid">
+          <label>Minimum eligible spend (R)<input name="minimum_rand" type="number" min="0" step="0.01" value="0"></label>
+          <label>Total usage limit<input name="usage_limit" type="number" min="1" max="1000000" step="1" value="50" required></label>
+        </div>
+        <div class="form-grid">
+          <label>Starts<input name="starts_at" type="datetime-local" value="${starts}" required></label>
+          <label>Expires (optional)<input name="expires_at" type="datetime-local" value="${expires}"></label>
+        </div>
+        <button class="primary-button">Generate & create code</button>
+        <p class="form-message"></p>
+      </form>
+    </section>
+    <section class="discount-code-grid">${cards || '<section class="dashboard-panel"><p>No discount codes have been created yet.</p></section>'}</section>`;
+
+  const type = content.querySelector("[data-discount-type]");
+  const syncType = () => {
+    const percentage = type.value === "percentage";
+    content.querySelector("[data-percentage-field]").hidden = !percentage;
+    content.querySelector("[data-fixed-field]").hidden = percentage;
+  };
+  type?.addEventListener("change", syncType);
+  if (type) syncType();
+}
+
 async function createProduct(form) {
   const fd = new FormData(form);
   const values = Object.fromEntries(fd);
@@ -799,7 +900,7 @@ async function renderOrders() {
   const query = supabase
     .from("vendor_orders")
     .select(
-      "id,public_reference,vendor_id,fulfilment_status,merchandise_total_cents,shipping_charge_cents,shipping_quote,commission_total_cents,created_at,orders(customer_name,customer_email),vendors(business_name)"
+      "id,public_reference,vendor_id,fulfilment_status,merchandise_subtotal_cents,merchandise_total_cents,discount_total_cents,discount_code,shipping_charge_cents,shipping_quote,commission_total_cents,created_at,orders(customer_name,customer_email),vendors(business_name)"
     )
     .order("created_at", {
       ascending: false
@@ -919,6 +1020,7 @@ async function renderOrders() {
                 )
               )
             }
+            ${Number(order.discount_total_cents) > 0 ? `<br><small>${escapeHtml(order.discount_code || "Discount")}: −${money(order.discount_total_cents)} off store items</small>` : ""}
           </td>
 
           ${
@@ -1613,6 +1715,33 @@ async function handlePortalClick(event) {
   const openView = event.target.closest("[data-open-view]");
   if (openView) return setActiveView(openView.dataset.openView);
 
+  const copyDiscount = event.target.closest("[data-copy-discount]");
+  if (copyDiscount) {
+    try {
+      await navigator.clipboard.writeText(copyDiscount.dataset.copyDiscount);
+      toast(`Copied ${copyDiscount.dataset.copyDiscount}.`);
+    } catch (_) {
+      toast(`Code: ${copyDiscount.dataset.copyDiscount}`);
+    }
+    return;
+  }
+
+  const toggleDiscount = event.target.closest("[data-toggle-discount]");
+  if (toggleDiscount) {
+    toggleDiscount.disabled = true;
+    const nextActive = toggleDiscount.dataset.nextActive === "true";
+    const { error } = await supabase.rpc("set_store_discount_code_active", {
+      p_discount_code_id: toggleDiscount.dataset.toggleDiscount,
+      p_active: nextActive,
+    });
+    if (error) {
+      toggleDiscount.disabled = false;
+      return toast(error.message);
+    }
+    toast(nextActive ? "Discount code activated." : "Discount code deactivated.");
+    return renderDiscounts();
+  }
+
   const settleStore = event.target.closest("[data-settle-store]");
   if (settleStore) {
     if (!confirm(`Confirm the store has been paid?\n\n${settleStore.dataset.settlementLabel}`)) return;
@@ -1966,6 +2095,45 @@ async function handlePortalSubmit(event) {
   event.preventDefault();
   const message = form.querySelector(".form-message");
   try {
+    if (form.dataset.form === "discount-code") {
+      const values = Object.fromEntries(new FormData(form));
+      const discountType = values.discount_type;
+      const startsAt = new Date(values.starts_at);
+      const expiresAt = values.expires_at ? new Date(values.expires_at) : null;
+      if (!Number.isFinite(startsAt.getTime()) || (expiresAt && !Number.isFinite(expiresAt.getTime()))) {
+        throw new Error("Enter valid start and expiry dates.");
+      }
+
+      const button = form.querySelector('button[type="submit"], button:not([type])');
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Creating…";
+      }
+
+      const { data, error } = await supabase.rpc("create_store_discount_code", {
+        p_vendor_id: values.vendor_id,
+        p_code: String(values.code || "").trim() || null,
+        p_name: String(values.name || "").trim() || null,
+        p_discount_type: discountType,
+        p_percentage: discountType === "percentage" ? Number(values.percentage) : null,
+        p_fixed_amount_cents: discountType === "fixed" ? Math.round(Number(values.fixed_rand) * 100) : null,
+        p_minimum_subtotal_cents: Math.round(Number(values.minimum_rand || 0) * 100),
+        p_usage_limit: Number(values.usage_limit),
+        p_starts_at: startsAt.toISOString(),
+        p_expires_at: expiresAt?.toISOString() || null,
+      });
+      if (error) {
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Generate & create code";
+        }
+        throw error;
+      }
+
+      toast(`Discount code ${data.code} created.`);
+      return renderDiscounts();
+    }
+
     if (form.dataset.form === "store-member") {
       const values = Object.fromEntries(new FormData(form));
       const button = form.querySelector('button[type="submit"], button:not([type])');
@@ -2246,6 +2414,7 @@ async function renderView() {
   if (state.view === "overview") return renderOverview();
   if (state.view === "stores") return renderStores();
   if (state.view === "products") return renderProducts();
+  if (state.view === "discounts") return renderDiscounts();
   if (state.view === "orders") return renderOrders();
   if (state.view === "settlements") return renderSettlements();
   if (state.view === "cancellations") return renderCancellations();

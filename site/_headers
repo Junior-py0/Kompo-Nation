@@ -13,6 +13,21 @@
 /login*
   X-Robots-Tag: noindex, nofollow
 
+/account*
+  X-Robots-Tag: noindex, nofollow
+
+/cart*
+  X-Robots-Tag: noindex, nofollow
+
+/checkout*
+  X-Robots-Tag: noindex, nofollow
+
+/wishlist*
+  X-Robots-Tag: noindex, nofollow
+
+/payment-*
+  X-Robots-Tag: noindex, nofollow
+
 # KOMPO VERSIONED BRAND ASSETS
 /assets/campaign-20260825.png
   Cache-Control: public, max-age=31536000, immutable
@@ -37,3 +52,6 @@
 
 /assets/kompo-nation-mark-transparent-v2.png
   Cache-Control: public, max-age=31536000, immutable
+
+/*
+  Link: <https://komponation.co.za/sitemap.xml>; rel="sitemap"; type="application/xml"

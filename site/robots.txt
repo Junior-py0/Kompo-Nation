@@ -2,8 +2,12 @@ User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /vendor
+Disallow: /login
 Disallow: /account
 Disallow: /checkout
-Disallow: /.netlify/
+Disallow: /cart
+Disallow: /wishlist
+Disallow: /payment-success
+Disallow: /payment-cancelled
 
-Sitemap: https://YOUR-DOMAIN.co.za/sitemap.xml
+Sitemap: https://komponation.co.za/sitemap.xml

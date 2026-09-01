@@ -1,0 +1,116 @@
+export const SITE_URL = "https://komponation.co.za";
+export const SUPABASE_URL = "https://vfifwtqbsdaxsikjpvku.supabase.co";
+export const SUPABASE_KEY = "sb_publishable_AaLevppY9LCW1tRIPoEjSw_SGgy_SDQ";
+
+export function escapeHtml(value = "") {
+  return String(value).replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;",
+  })[character]);
+}
+
+export function escapeXml(value = "") {
+  return escapeHtml(value);
+}
+
+export function absoluteUrl(value = "") {
+  if (!value) return "";
+  try { return new URL(value, SITE_URL).href; }
+  catch (_) { return ""; }
+}
+
+export function storeAliases(name = "", slug = "") {
+  const compact = `${name} ${slug}`.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return compact.includes("letwosix") || compact.includes("le26")
+    ? ["Le Two Six", "Le 26"]
+    : [];
+}
+
+export function jsonLd(value) {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+export async function supabaseRows(table, parameters = {}) {
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+  Object.entries(parameters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
+  });
+  const response = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+    },
+  });
+  if (!response.ok) throw new Error(`Catalogue request failed (${response.status}).`);
+  return response.json();
+}
+
+export async function allSupabaseRows(table, parameters = {}) {
+  const rows = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await supabaseRows(table, { ...parameters, limit: pageSize, offset });
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
+export async function storefrontDocument(context, {
+  title,
+  description,
+  canonical,
+  image,
+  type = "website",
+  structuredData,
+  bodyHtml,
+  status = 200,
+}) {
+  const assetUrl = new URL("/", context.request.url);
+  const asset = await context.env.ASSETS.fetch(new Request(assetUrl, context.request));
+  let html = await asset.text();
+  const safeTitle = escapeHtml(title);
+  const safeDescription = escapeHtml(description);
+  const safeCanonical = escapeHtml(absoluteUrl(canonical));
+  const safeImage = escapeHtml(absoluteUrl(image || "/assets/campaign-kompo-apparel-v2.png"));
+
+  html = html
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${safeTitle}</title>`)
+    .replace(/\s*<script\s+id=["']kompo-structured-data["'][^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/\s*<meta\s+name=["'](?:description|robots|twitter:[^"']+)["'][^>]*>/gi, "")
+    .replace(/\s*<meta\s+property=["']og:[^"']+["'][^>]*>/gi, "")
+    .replace(/\s*<link\s+rel=["']canonical["'][^>]*>/gi, "");
+
+  const socialTags = `
+  <meta name="description" content="${safeDescription}">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+  <link rel="canonical" href="${safeCanonical}">
+  <meta property="og:site_name" content="Kompo Nation">
+  <meta property="og:locale" content="en_ZA">
+  <meta property="og:type" content="${escapeHtml(type)}">
+  <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="${safeDescription}">
+  <meta property="og:url" content="${safeCanonical}">
+  <meta property="og:image" content="${safeImage}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${safeTitle}">
+  <meta name="twitter:description" content="${safeDescription}">
+  <meta name="twitter:image" content="${safeImage}">
+  <script id="kompo-structured-data" type="application/ld+json">${jsonLd(structuredData)}</script>`;
+  html = html.replace("</head>", `${socialTags}\n</head>`);
+
+  if (bodyHtml) {
+    html = html.replace(
+      /<main id="app" tabindex="-1">[\s\S]*?<\/main>/i,
+      `<main id="app" tabindex="-1">${bodyHtml}</main>`,
+    );
+  }
+
+  const headers = new Headers(asset.headers);
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("Cache-Control", "public, max-age=0, s-maxage=300, stale-while-revalidate=86400");
+  headers.delete("Content-Length");
+  return new Response(html, { status, headers });
+}
