@@ -118,7 +118,7 @@ Deno.serve(async (request: Request) => {
 
     const select =
       "id,vendor_id,name,status," +
-      "vendors(id,business_name,status," +
+      "vendors(id,business_name,status,commission_rate_bps," +
       "vendor_private_settings(" +
       "contact_email," +
       "contact_phone," +
@@ -287,7 +287,11 @@ Deno.serve(async (request: Request) => {
               { line, variant },
             ) =>
               sum +
-              Number(variant.price_cents) *
+              Math.round(
+                Number(variant.price_cents) *
+                (10000 + Number(vendor.commission_rate_bps || 1000)) /
+                10000
+              ) *
                 Number(line.quantity),
             0,
           );

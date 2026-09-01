@@ -11,6 +11,9 @@ const layout = document.querySelector("#portal-layout");
 const content = document.querySelector("#portal-content");
 const state = { session: null, isAdmin: false, vendorIds: [], stores: [], currentVendorId: null, view: "overview" };
 const money = (cents) => new Intl.NumberFormat(CONFIG.locale, { style: "currency", currency: CONFIG.currency }).format(Number(cents || 0) / 100);
+const customerPriceCents = (baseCents, markupRateBps = 1000) => Math.round(
+  Number(baseCents || 0) * (10000 + Number(markupRateBps || 0)) / 10000
+);
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 
 function toast(message) {
@@ -142,18 +145,20 @@ function showError(error) {
 /* ========================================================================== */
 async function renderOverview() {
   // VENDOR_COMMISSION_PRIVACY_V2
-  const orderQuery = supabase.from("vendor_orders").select("id,merchandise_total_cents,commission_total_cents,fulfilment_status,created_at,vendors(business_name)").order("created_at", { ascending: false }).limit(50);
+  const orderQuery = supabase.from("vendor_orders").select("id,merchandise_total_cents,commission_total_cents,vendor_net_cents,fulfilment_status,created_at,vendors(business_name)").order("created_at", { ascending: false }).limit(50);
   const { data: orders, error } = area === "vendor" ? await orderQuery.eq("vendor_id", state.currentVendorId) : await orderQuery;
   if (error) throw error;
-  const gross = orders.reduce((sum, order) => sum + Number(order.merchandise_total_cents), 0);
+  const gross = orders.reduce((sum, order) => sum + Number(
+    area === "vendor" ? order.vendor_net_cents : order.merchandise_total_cents
+  ), 0);
   const commission = orders.reduce((sum, order) => sum + Number(order.commission_total_cents), 0);
   const open = orders.filter((order) => !["delivered", "cancelled"].includes(order.fulfilment_status)).length;
   content.innerHTML = `${header(area === "admin" ? "CONTROL ROOM" : "STORE PULSE", area === "admin" ? "Nation overview" : "Your store today", area === "admin" ? "Marketplace activity across every active store." : "Sales and fulfilment for the selected store.")}
-    <div class="stat-grid"><article class="stat-card"><span>Merchandise value</span><strong>${money(gross)}</strong><small>Loaded order history</small></article>${
+    <div class="stat-grid"><article class="stat-card"><span>${area === "admin" ? "Customer merchandise value" : "Store earnings"}</span><strong>${money(gross)}</strong><small>${area === "admin" ? "Customer-paid merchandise" : "Vendor base prices after store discounts"}</small></article>${
       area === "admin"
         ? `
           <article class="stat-card">
-            <span>Commission earned</span>
+            <span>Markup earned</span>
             <strong>${money(commission)}</strong>
             <small>Operator-only platform earnings</small>
           </article>
@@ -318,7 +323,7 @@ async function renderStores() {
           </div>
 
           <div class="form-grid">
-            <label>Kompo commission %
+            <label>Customer markup %
               <input data-store-commission="${store.id}" type="number" min="0" max="40" step=".1" value="${(Number(store.commission_rate_bps) / 100).toFixed(1)}">
             </label>
             <label>Store badge (1–3 characters)
@@ -480,7 +485,7 @@ async function renderStores() {
         </div>
 
         <div class="form-grid">
-          <label>Kompo commission %
+          <label>Customer markup %
             <input name="commission_percent" type="number" min="0" max="40" step=".1" value="10" required>
           </label>
           <label>Store badge (1–3 characters)
@@ -630,10 +635,13 @@ async function renderProducts() {
 
   const productCards = products.map((product) => {
     const vendor = Array.isArray(product.vendors) ? product.vendors[0] : product.vendors;
+    const productStore = state.stores.find((store) => store.id === product.vendor_id);
+    const markupRateBps = Number(productStore?.commission_rate_bps || 1000);
     const variants = product.product_variants || [];
     const media = (product.product_media || []).slice().sort((a,b) => Number(a.sort_order) - Number(b.sort_order));
     const totalStock = variants.reduce((sum,variant) => sum + Number(variant.stock_quantity), 0);
-    const minPrice = variants.length ? Math.min(...variants.map((variant) => Number(variant.price_cents))) : 0;
+    const minBasePrice = variants.length ? Math.min(...variants.map((variant) => Number(variant.price_cents))) : 0;
+    const minCustomerPrice = customerPriceCents(minBasePrice, markupRateBps);
     const displayWeight = weightForDisplay(variants[0]?.weight_kg);
 
     return `<article class="terminal-product-card">
@@ -641,7 +649,7 @@ async function renderProducts() {
         <div>
           <p class="eyebrow">${escapeHtml(vendor?.business_name || "STORE")}</p>
           <h2>${escapeHtml(product.name)}</h2>
-          <p>${escapeHtml(product.category)} · ${money(minPrice)} · ${totalStock} online</p>
+          <p>${escapeHtml(product.category)} · ${money(minBasePrice)} vendor base · ${money(minCustomerPrice)} customer price · ${totalStock} online</p>
         </div>
         <div class="terminal-actions">
           <span class="status-pill">${escapeHtml(product.status)}</span>
@@ -691,11 +699,11 @@ async function renderProducts() {
         </div>
 
         <section class="inventory-section">
-          <div class="terminal-section-heading"><div><h3>Sizes, colours, prices and stock</h3><p>Update price/status separately from physical stock.</p></div></div>
+          <div class="terminal-section-heading"><div><h3>Sizes, colours, prices and stock</h3><p>Enter the vendor base price. The ${markupRateBps / 100}% customer markup is added automatically.</p></div></div>
           <div class="inventory-list">
             ${variants.map((variant) => `<article class="inventory-row">
               <div class="inventory-identity"><strong>${escapeHtml(variant.size)} · ${escapeHtml(variant.colour)}</strong><small>${escapeHtml(variant.sku)}</small></div>
-              <label>Price (R)<input type="number" min="1" step=".01" value="${(Number(variant.price_cents)/100).toFixed(2)}" data-price="${variant.id}"></label>
+              <label>Vendor base price (R)<input type="number" min="1" step=".01" value="${(Number(variant.price_cents)/100).toFixed(2)}" data-price="${variant.id}"><small>Customer pays ${money(customerPriceCents(variant.price_cents, markupRateBps))}</small></label>
               <label>Stock<input type="number" min="0" step="1" value="${Number(variant.stock_quantity)}" data-stock="${variant.id}"></label>
               <label class="variant-active-toggle"><input type="checkbox" ${variant.active ? "checked" : ""} data-active="${variant.id}"><span>Active</span></label>
               <div class="inventory-actions"><button class="table-action" type="button" data-save-variant="${variant.id}">Save price / status</button><button class="table-action" type="button" data-save-stock="${variant.id}">Update stock</button></div>
@@ -708,7 +716,7 @@ async function renderProducts() {
           <div class="variant-create-grid">
             <label>Size<input data-new-size="${product.id}" placeholder="XL"></label>
             <label>Colour<input data-new-colour="${product.id}" placeholder="Black"></label>
-            <label>Price (R)<input type="number" min="1" step=".01" data-new-price="${product.id}" value="${variants.length ? (Number(variants[0].price_cents)/100).toFixed(2) : "2.00"}"></label>
+            <label>Vendor base price (R)<input type="number" min="1" step=".01" data-new-price="${product.id}" value="${variants.length ? (Number(variants[0].price_cents)/100).toFixed(2) : "2.00"}"></label>
             <label>Starting stock<input type="number" min="0" step="1" data-new-stock="${product.id}" value="0"></label>
           </div>
           <button class="table-action" type="button" data-add-variant="${product.id}">Add variant</button>
@@ -741,7 +749,7 @@ async function renderProducts() {
         <div><strong>Sizes</strong><div class="size-picker">${sizePicker()}</div><label>Other sizes<input name="custom_sizes" placeholder="30, 32, 34"></label></div>
         <label>Colours<input name="colours" required placeholder="Black, White"><small>Comma-separated. Every chosen size is created in every listed colour.</small></label>
         <div class="form-grid">
-          <label>Price (R)<input name="price_rand" type="number" min="1" step=".01" value="2.00" required></label>
+          <label>Vendor base price (R)<input name="price_rand" type="number" min="1" step=".01" value="2.00" required><small>Kompo Nation adds the store's customer markup automatically.</small></label>
           <label>Starting stock per variant<input name="stock_quantity" type="number" min="0" step="1" value="0" required></label>
         </div>
         <div class="weight-unit-row">
@@ -957,7 +965,7 @@ async function renderOrders() {
   const query = supabase
     .from("vendor_orders")
     .select(
-      "id,public_reference,vendor_id,fulfilment_status,merchandise_subtotal_cents,merchandise_total_cents,discount_total_cents,discount_code,shipping_charge_cents,shipping_quote,commission_total_cents,created_at,orders(customer_name,customer_email),vendors(business_name),order_items(id,product_name,variant_description,sku,unit_price_cents,quantity,line_total_cents,product_variants(size,colour),products(product_media(public_url,alt_text,sort_order)))"
+      "id,public_reference,vendor_id,fulfilment_status,merchandise_subtotal_cents,merchandise_total_cents,discount_total_cents,discount_code,shipping_charge_cents,shipping_quote,commission_total_cents,vendor_net_cents,created_at,orders(customer_name,customer_email),vendors(business_name),order_items(id,product_name,variant_description,sku,unit_price_cents,quantity,line_total_cents,product_variants(size,colour),products(product_media(public_url,alt_text,sort_order)))"
     )
     .order("created_at", {
       ascending: false
@@ -1053,10 +1061,11 @@ async function renderOrders() {
             <aside class="portal-order-summary-card">
               <div><small>Customer</small><strong>${escapeHtml(parent?.customer_name || "Customer")}</strong><span>${escapeHtml(parent?.customer_email || "No email recorded")}</span></div>
               ${area === "admin" ? `<div><small>Store</small><strong>${escapeHtml(vendor?.business_name || "Store")}</strong></div>` : ""}
-              <div><small>Items subtotal</small><strong>${money(order.merchandise_subtotal_cents)}</strong></div>
+              <div><small>Customer items subtotal</small><strong>${money(order.merchandise_subtotal_cents)}</strong></div>
               ${Number(order.discount_total_cents) > 0 ? `<div><small>${escapeHtml(order.discount_code || "Discount")}</small><strong>-${money(order.discount_total_cents)}</strong></div>` : ""}
               <div><small>Shipping</small><strong>${money(order.shipping_charge_cents)}</strong></div>
-              ${area === "admin" ? `<div><small>Commission</small><strong>${money(order.commission_total_cents)}</strong></div>` : ""}
+              ${area === "admin" ? `<div><small>Platform markup</small><strong>${money(order.commission_total_cents)}</strong></div>` : ""}
+              <div><small>Store earnings</small><strong>${money(order.vendor_net_cents)}</strong></div>
               <div class="portal-order-total"><small>Package total</small><strong>${money(Number(order.merchandise_total_cents) + Number(order.shipping_charge_cents))}</strong></div>
             </aside>
           </div>
@@ -1434,23 +1443,24 @@ function renderInformation() {
 
       <section class="dashboard-panel vendor-info-card">
         <p class="eyebrow">SALES</p>
-        <h2>Marketplace commission</h2>
+        <h2>Customer price markup</h2>
 
         <p>
-          Your current Kompo Nation marketplace commission rate is
+          Your current Kompo Nation customer markup rate is
           <strong>${commissionPercent}%</strong>
-          of merchandise sales.
+          above the vendor base price you enter.
         </p>
 
         <p>
-          Commission is calculated as part of the marketplace transaction.
-          Your portal focuses on your store's sales and fulfilment activity;
-          Kompo Nation's cumulative platform earnings are private operator
-          information.
+          If your base price is R100, the customer sees R110. For an
+          undiscounted sale, your store keeps the full R100 base amount and
+          Kompo Nation receives the R10 markup. The markup is not deducted
+          from your base price.
         </p>
 
         <p>
-          Your agreed commission and settlement terms should always match
+          Store-created discount codes reduce the customer price and the
+          corresponding store earnings proportionally. Your pricing and settlement terms should always match
           your current vendor agreement with Kompo Nation.
         </p>
       </section>
@@ -1633,7 +1643,7 @@ function renderInformation() {
         </p>
       </section>
 
-    <section class="dashboard-panel vendor-info-card"><p class="eyebrow">RETURN LOGISTICS</p><h2>Returns and exchanges create new courier legs.</h2><p>Customer-responsible returns are paid by the customer before collection. Store-responsible return courier costs are booked through Kompo Nation and become a store balance recovered from future payouts.</p><p>An exchange can create two new logistics legs: customer â†’ store and store â†’ customer. Each is quoted and charged separately.</p><p>For refunds, Kompo Nation commission is not automatically waived; the original vendor-net merchandise amount may also become a recovery balance.</p></section></div>
+    <section class="dashboard-panel vendor-info-card"><p class="eyebrow">RETURN LOGISTICS</p><h2>Returns and exchanges create new courier legs.</h2><p>Customer-responsible returns are paid by the customer before collection. Store-responsible return courier costs are booked through Kompo Nation and become a store balance recovered from future payouts.</p><p>An exchange can create two new logistics legs, from customer to store and from store to customer. Each is quoted and charged separately.</p><p>For an approved merchandise refund, Kompo Nation returns its markup portion and the store remains responsible for its vendor-net merchandise amount where applicable.</p></section></div>
   `;
 }
 
@@ -1643,7 +1653,7 @@ async function renderSettings() {
     const { data, error } = await supabase.from("marketplace_settings").select("key,value").order("key");
     if (error) throw error;
     const value = (key, fallback) => data.find((item) => item.key === key)?.value ?? fallback;
-    content.innerHTML = `${header("PLATFORM RULES", "Settings", "Controls stored in the database and protected by operator RLS.")}<section class="dashboard-panel"><form class="stack-form dashboard-form" data-form="admin-settings"><div class="form-grid"><label>Default commission percent<input name="default_commission" type="number" min="0" max="40" step=".1" value="${Number(value("default_commission_rate_bps",1000))/100}"></label><label>Stock reservation minutes<input name="reservation_minutes" type="number" min="5" max="60" value="${Number(value("stock_reservation_minutes",15))}"></label></div><div class="form-grid"><label>First reminder hours<input name="reminder_hours" type="number" min="1" value="${Number(value("fulfilment_reminder_hours",24))}"></label><label>Escalation hours<input name="escalation_hours" type="number" min="2" value="${Number(value("fulfilment_escalation_hours",72))}"></label></div><button class="primary-button">Save platform settings</button><p class="form-message"></p></form></section>`;
+    content.innerHTML = `${header("PLATFORM RULES", "Settings", "Controls stored in the database and protected by operator RLS.")}<section class="dashboard-panel"><form class="stack-form dashboard-form" data-form="admin-settings"><div class="form-grid"><label>Default customer markup percent<input name="default_commission" type="number" min="0" max="40" step=".1" value="${Number(value("default_commission_rate_bps",1000))/100}"></label><label>Stock reservation minutes<input name="reservation_minutes" type="number" min="5" max="60" value="${Number(value("stock_reservation_minutes",15))}"></label></div><div class="form-grid"><label>First reminder hours<input name="reminder_hours" type="number" min="1" value="${Number(value("fulfilment_reminder_hours",24))}"></label><label>Escalation hours<input name="escalation_hours" type="number" min="2" value="${Number(value("fulfilment_escalation_hours",72))}"></label></div><button class="primary-button">Save platform settings</button><p class="form-message"></p></form></section>`;
     return;
   }
 

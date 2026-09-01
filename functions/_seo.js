@@ -22,6 +22,12 @@ export function absoluteUrl(value = "") {
   catch (_) { return ""; }
 }
 
+export function customerPriceCents(baseCents, markupRateBps = 1000) {
+  return Math.round(
+    Number(baseCents || 0) * (10000 + Number(markupRateBps || 0)) / 10000,
+  );
+}
+
 export function storeAliases(name = "", slug = "") {
   const compact = `${name} ${slug}`.toLowerCase().replace(/[^a-z0-9]/g, "");
   return compact.includes("letwosix") || compact.includes("le26")

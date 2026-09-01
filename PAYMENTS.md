@@ -90,6 +90,18 @@ Save the one-time `secret` from that response as `YOCO_WEBHOOK_SECRET`.
 
 ## Marketplace settlement safety
 
+Product variant prices are stored as vendor base prices. The storefront and
+checkout add the store's configured customer markup, which is 10% by default.
+For example, a R100 vendor base price is shown and charged as R110. For an
+undiscounted order, `vendor_net_cents` remains R100 and
+`commission_total_cents` records the R10 platform markup. Paystack split shares
+and manual settlements therefore pay the vendor base amount without subtracting
+the platform markup from it. Historical order snapshots are not recalculated.
+
+Store discount codes apply to the marked-up customer price. The discounted
+amount is split back into vendor net and platform markup in the same proportion,
+so a vendor-issued discount reduces both amounts consistently.
+
 Paystack distributes a single customer payment to multiple vendor subaccounts.
 Stitch's current public split-payment API supports only one split destination
 and card payments, so it cannot reproduce Kompo's multi-vendor settlement.

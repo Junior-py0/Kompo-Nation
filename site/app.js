@@ -4307,7 +4307,7 @@ const KOMPO_LEGAL_PAGES = {
 
 
       [
-        "20. Vendor Clause — responsibility",
+        "20. Vendor Clause: responsibility",
         `
           <p>
             The following clauses apply additionally
@@ -4326,51 +4326,51 @@ const KOMPO_LEGAL_PAGES = {
 
 
       [
-        "21. Vendor Clause — marketplace commission",
+        "21. Vendor Clause: customer price markup",
         `
           <p>
             Unless a different rate is expressly
             agreed with or configured for a vendor,
-            Kompo Nation's standard marketplace
-            commission is
-            <strong>10% of merchandise sales</strong>.
+            Kompo Nation's standard customer price
+            markup is <strong>10% above the vendor's
+            submitted base price</strong>.
           </p>
 
           <p>
-            Kompo Nation's cumulative platform
-            earnings, profitability and earnings
-            generated across other vendors are
-            confidential operator information.
+            For example, a R100 vendor base price is
+            shown to the customer as R110. For an
+            undiscounted sale, the vendor settlement
+            remains R100 and the R10 markup is paid to
+            Kompo Nation. The markup is not deducted
+            from the vendor's base price.
           </p>
         `
       ],
 
 
       [
-        "22. Vendor Clause — commission after a return or refund",
+        "22. Vendor Clause: returns and refunds",
         `
           <p>
-            Except where Kompo Nation agrees
-            otherwise in writing or applicable law
-            requires another result, marketplace
-            commission earned for facilitating a
-            completed transaction remains payable
-            by the vendor even if merchandise is
-            later returned or refunded.
+            When an approved transaction is refunded,
+            Kompo Nation returns the corresponding
+            platform markup portion and the vendor
+            remains responsible for the vendor-net
+            merchandise amount where applicable.
           </p>
 
           <p>
             This rule does not reduce any refund
-            legally owed to the customer. The vendor
-            may therefore bear the commercial effect
-            of the retained marketplace commission.
+            legally owed to the customer. Store-created
+            discounts may reduce both the customer
+            price and vendor settlement proportionally.
           </p>
         `
       ],
 
 
       [
-        "23. Vendor Clause — vendor-caused returns",
+        "23. Vendor Clause: vendor-caused returns",
         `
           <p>
             Where a return results from the wrong
@@ -4387,7 +4387,7 @@ const KOMPO_LEGAL_PAGES = {
 
 
       [
-        "24. Vendor Clause — fulfilment and packaging",
+        "24. Vendor Clause: fulfilment and packaging",
         `
           <p>
             Vendors must maintain accurate product

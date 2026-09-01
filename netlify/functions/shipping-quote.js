@@ -8,7 +8,7 @@ exports.handler = async (event) => {
     const body = JSON.parse(event.body || "{}");
     if (!body.lines?.length || !body.address?.streetAddress || !body.address?.postalCode || !body.contact?.email || !body.contact?.phone) return json(400, { error: "Cart, contact and complete delivery details are required." });
     const ids = [...new Set(body.lines.map((line) => line.productId))];
-    const select = "id,vendor_id,name,status,vendors(id,business_name,status,vendor_private_settings(contact_email,contact_phone,collection_street_address,collection_local_area,collection_city,collection_province,collection_postal_code,collection_country_code)),product_variants(id,sku,size,colour,price_cents,stock_quantity,weight_kg,length_cm,width_cm,height_cm,active)";
+    const select = "id,vendor_id,name,status,vendors(id,business_name,status,commission_rate_bps,vendor_private_settings(contact_email,contact_phone,collection_street_address,collection_local_area,collection_city,collection_province,collection_postal_code,collection_country_code)),product_variants(id,sku,size,colour,price_cents,stock_quantity,weight_kg,length_cm,width_cm,height_cm,active)";
     const products = await supabaseRequest(`products?select=${encodeURIComponent(select)}&id=in.(${ids.join(",")})`);
     const groups = new Map();
     for (const line of body.lines) {
@@ -30,7 +30,7 @@ exports.handler = async (event) => {
       if (process.env.BOBGO_API_TOKEN) {
         if (!privateSettings?.collection_street_address || !privateSettings.collection_city || !privateSettings.collection_postal_code) return json(409, { error: `${vendor.business_name} must complete its collection address.` });
         const collectionAddress = { company: vendor.business_name, streetAddress: privateSettings.collection_street_address, localArea: privateSettings.collection_local_area || "", city: privateSettings.collection_city, province: privateSettings.collection_province || "", postalCode: privateSettings.collection_postal_code, country: privateSettings.collection_country_code || "ZA" };
-        const declaredValue = group.lines.reduce((sum, item) => sum + Number(item.variant.price_cents) * Number(item.line.quantity), 0);
+        const declaredValue = group.lines.reduce((sum, item) => sum + Math.round(Number(item.variant.price_cents) * (10000 + Number(vendor.commission_rate_bps || 1000)) / 10000) * Number(item.line.quantity), 0);
         const payload = {
           collection_address: mapAddress(collectionAddress), delivery_address: mapAddress(body.address),
           parcels: group.lines.map(({ line, product, variant }) => ({ description: `${product.name} × ${line.quantity}`, submitted_length_cm: Number(variant.length_cm), submitted_width_cm: Number(variant.width_cm), submitted_height_cm: Number(variant.height_cm), submitted_weight_kg: Number(variant.weight_kg) * Number(line.quantity), custom_parcel_reference: variant.sku })),

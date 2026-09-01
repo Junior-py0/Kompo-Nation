@@ -1,6 +1,7 @@
 import {
   SITE_URL,
   absoluteUrl,
+  customerPriceCents,
   escapeHtml,
   storefrontDocument,
   storeAliases,
@@ -29,7 +30,7 @@ export async function onRequest(context) {
 
   const [[vendor], variants, media] = await Promise.all([
     supabaseRows("vendors", {
-      select: "id,slug,business_name,description,short_description,mark,status,updated_at",
+      select: "id,slug,business_name,description,short_description,mark,status,commission_rate_bps,updated_at",
       id: `eq.${product.vendor_id}`,
       status: "eq.active",
       retired_at: "is.null",
@@ -60,6 +61,7 @@ export async function onRequest(context) {
 
   const images = media.map((item) => absoluteUrl(item.public_url)).filter(Boolean);
   const aliases = storeAliases(vendor.business_name, vendor.slug);
+  const markupRateBps = Number(vendor.commission_rate_bps || 1000);
   const aliasCopy = aliases.length ? `, also searched as ${aliases.join(" and ")}` : "";
   const description = `Shop ${product.name} by ${vendor.business_name}${aliasCopy} on Kompo Nation. ${product.description}`.slice(0, 300);
   const canonical = `${SITE_URL}/product/${encodeURIComponent(product.slug)}`;
@@ -67,13 +69,13 @@ export async function onRequest(context) {
     "@type": "Offer",
     url: canonical,
     priceCurrency: "ZAR",
-    price: (Number(variant.price_cents) / 100).toFixed(2),
+    price: (customerPriceCents(variant.price_cents, markupRateBps) / 100).toFixed(2),
     availability: Number(variant.stock_quantity) > 0
       ? "https://schema.org/InStock"
       : "https://schema.org/OutOfStock",
     itemCondition: "https://schema.org/NewCondition",
     sku: variant.sku,
-    name: `${product.name} – ${variant.size}, ${variant.colour}`,
+    name: `${product.name}, ${variant.size}, ${variant.colour}`,
     seller: { "@type": "Organization", name: vendor.business_name },
   }));
   const structuredData = {
@@ -93,7 +95,9 @@ export async function onRequest(context) {
     },
     offers,
   };
-  const lowestPrice = variants.length ? Math.min(...variants.map((item) => Number(item.price_cents))) : 0;
+  const lowestPrice = variants.length
+    ? Math.min(...variants.map((item) => customerPriceCents(item.price_cents, markupRateBps)))
+    : 0;
   const totalStock = variants.reduce((sum, item) => sum + Number(item.stock_quantity), 0);
   const gallery = images.length
     ? images.map((image, index) => `<img src="${escapeHtml(image)}" alt="${escapeHtml(media[index]?.alt_text || `${product.name} product photo`)}" ${index ? 'loading="lazy"' : ""}>`).join("")

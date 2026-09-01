@@ -534,16 +534,21 @@ end;
 $$;
 
 -- ============================================================================
--- 11. TRUSTED CHECKOUT FUNCTION — CALLED ONLY BY THE NETLIFY SERVER FUNCTION
+-- 11. TRUSTED CHECKOUT FUNCTION, CALLED ONLY BY THE NETLIFY SERVER FUNCTION
 -- ============================================================================
+create or replace function public.customer_price_cents(p_base_cents bigint, p_markup_rate_bps integer)
+returns bigint language sql immutable strict set search_path = '' as $$
+  select greatest(0,p_base_cents) + round(greatest(0,p_base_cents) * greatest(0,p_markup_rate_bps) / 10000.0)::bigint;
+$$;
+
 create or replace function public.create_checkout(
   p_customer_id uuid, p_lines jsonb, p_address jsonb, p_contact jsonb, p_quotes jsonb
 ) returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   v_order_id uuid := gen_random_uuid(); v_order_ref text := 'KN-' || upper(substr(replace(gen_random_uuid()::text,'-',''),1,10));
   v_vendor record; v_line jsonb; v_product public.products%rowtype; v_variant public.product_variants%rowtype;
-  v_vendor_order_id uuid; v_vendor_ref text; v_quote jsonb; v_qty integer; v_reserved integer;
-  v_merch bigint := 0; v_shipping bigint := 0; v_vendor_merch bigint; v_vendor_commission bigint; v_vendor_shipping bigint;
+  v_vendor_order_id uuid; v_vendor_ref text; v_quote jsonb; v_qty integer; v_reserved integer; v_markup_rate_bps integer; v_customer_unit_price bigint;
+  v_merch bigint := 0; v_shipping bigint := 0; v_vendor_base bigint; v_vendor_merch bigint; v_vendor_commission bigint; v_vendor_shipping bigint;
   v_total bigint; v_expires timestamptz := now() + interval '15 minutes'; v_outside_count integer; v_private record;
   v_splits jsonb := '[]'::jsonb;
 begin
@@ -562,9 +567,10 @@ begin
     v_qty := (v_line->>'quantity')::integer;
     select p.* into strict v_product from public.products p where p.id = (v_line->>'productId')::uuid and p.status = 'active';
     select pv.* into strict v_variant from public.product_variants pv where pv.product_id = v_product.id and pv.size = v_line->>'size' and pv.colour = v_line->>'colour' and pv.active for update;
+    select commission_rate_bps into strict v_markup_rate_bps from public.vendors where id=v_product.vendor_id and status='active';
     select coalesce(sum(quantity),0) into v_reserved from public.stock_reservations where variant_id = v_variant.id and status = 'active' and expires_at > now();
     if v_qty < 1 or v_variant.stock_quantity - v_reserved < v_qty then raise exception 'Insufficient online stock for %', v_product.name; end if;
-    v_merch := v_merch + v_variant.price_cents * v_qty;
+    v_merch := v_merch + public.customer_price_cents(v_variant.price_cents,v_markup_rate_bps) * v_qty;
   end loop;
   select coalesce(sum((quote->>'amountCents')::bigint),0) into v_shipping from jsonb_array_elements(p_quotes) quote;
   v_total := v_merch + v_shipping;
@@ -581,13 +587,16 @@ begin
     select quote into v_quote from jsonb_array_elements(p_quotes) quote where quote->>'vendorId' = v_vendor.id::text limit 1;
     if v_quote is null then raise exception 'Delivery quote missing for %', v_vendor.business_name; end if;
     v_vendor_shipping := (v_quote->>'amountCents')::bigint;
-    select sum(pv.price_cents * (line->>'quantity')::integer)::bigint into v_vendor_merch
+    select
+      sum(pv.price_cents * (line->>'quantity')::integer)::bigint,
+      sum(public.customer_price_cents(pv.price_cents,v_vendor.commission_rate_bps) * (line->>'quantity')::integer)::bigint
+    into v_vendor_base,v_vendor_merch
     from jsonb_array_elements(p_lines) line join public.products p on p.id=(line->>'productId')::uuid join public.product_variants pv on pv.product_id=p.id and pv.size=line->>'size' and pv.colour=line->>'colour'
     where p.vendor_id=v_vendor.id;
-    v_vendor_commission := round(v_vendor_merch * v_vendor.commission_rate_bps / 10000.0);
+    v_vendor_commission := v_vendor_merch-v_vendor_base;
     v_vendor_ref := v_order_ref || '-' || upper(substr(replace(v_vendor.id::text,'-',''),1,3));
     insert into public.vendor_orders(order_id,vendor_id,public_reference,merchandise_total_cents,commission_total_cents,vendor_net_cents,shipping_charge_cents,shipping_quote)
-    values (v_order_id,v_vendor.id,v_vendor_ref,v_vendor_merch,v_vendor_commission,v_vendor_merch-v_vendor_commission,v_vendor_shipping,v_quote)
+    values (v_order_id,v_vendor.id,v_vendor_ref,v_vendor_merch,v_vendor_commission,v_vendor_base,v_vendor_shipping,v_quote)
     returning id into v_vendor_order_id;
 
     for v_line in select * from jsonb_array_elements(p_lines)
@@ -596,13 +605,14 @@ begin
       if found then
         v_qty := (v_line->>'quantity')::integer;
         select * into strict v_variant from public.product_variants where product_id=v_product.id and size=v_line->>'size' and colour=v_line->>'colour';
+        v_customer_unit_price := public.customer_price_cents(v_variant.price_cents,v_vendor.commission_rate_bps);
         insert into public.order_items(order_id,vendor_order_id,vendor_id,product_id,variant_id,product_name,variant_description,sku,unit_price_cents,quantity,line_total_cents,commission_rate_bps,commission_cents,vendor_net_cents)
-        values (v_order_id,v_vendor_order_id,v_vendor.id,v_product.id,v_variant.id,v_product.name,v_variant.size||' / '||v_variant.colour,v_variant.sku,v_variant.price_cents,v_qty,v_variant.price_cents*v_qty,v_vendor.commission_rate_bps,round(v_variant.price_cents*v_qty*v_vendor.commission_rate_bps/10000.0),v_variant.price_cents*v_qty-round(v_variant.price_cents*v_qty*v_vendor.commission_rate_bps/10000.0));
+        values (v_order_id,v_vendor_order_id,v_vendor.id,v_product.id,v_variant.id,v_product.name,v_variant.size||' / '||v_variant.colour,v_variant.sku,v_customer_unit_price,v_qty,v_customer_unit_price*v_qty,v_vendor.commission_rate_bps,(v_customer_unit_price-v_variant.price_cents)*v_qty,v_variant.price_cents*v_qty);
         insert into public.stock_reservations(order_id,variant_id,quantity,expires_at) values (v_order_id,v_variant.id,v_qty,v_expires);
       end if;
     end loop;
     if not v_vendor.is_platform_owned then
-      v_splits := v_splits || jsonb_build_array(jsonb_build_object('merchantId',v_private.payfast_merchant_id,'amountCents',v_vendor_merch-v_vendor_commission));
+      v_splits := v_splits || jsonb_build_array(jsonb_build_object('merchantId',v_private.payfast_merchant_id,'amountCents',v_vendor_base));
     end if;
   end loop;
   insert into public.payments(order_id,amount_cents) values (v_order_id,v_total);
