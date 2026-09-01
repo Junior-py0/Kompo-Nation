@@ -895,12 +895,69 @@ async function createProduct(form) {
   renderProducts();
 }/* 06. ORDER AND RETURN MANAGEMENT                                            */
 /* ========================================================================== */
+function firstRelation(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function orderItemPresentation(item) {
+  const variant = firstRelation(item.product_variants) || {};
+  const product = firstRelation(item.products) || {};
+  const descriptionParts = String(item.variant_description || "")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const media = (product.product_media || [])
+    .slice()
+    .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0));
+  const primaryImage = media.find((image) => image.public_url);
+
+  return {
+    size: variant.size || descriptionParts[0] || "Not specified",
+    colour: variant.colour || descriptionParts.slice(1).join(" / ") || "Not specified",
+    imageUrl: primaryImage?.public_url || "",
+    imageAlt: primaryImage?.alt_text || item.product_name || "Ordered product",
+  };
+}
+
+function renderOrderItems(items) {
+  if (!items?.length) {
+    return `<div class="portal-order-items-empty">No item details were recorded for this package.</div>`;
+  }
+
+  return items.map((item) => {
+    const details = orderItemPresentation(item);
+    const initial = String(item.product_name || "P").trim().charAt(0).toUpperCase() || "P";
+
+    return `
+      <article class="portal-order-item">
+        <div class="portal-order-item-image">
+          <span aria-hidden="true">${escapeHtml(initial)}</span>
+          ${details.imageUrl ? `<img data-order-product-image src="${escapeHtml(details.imageUrl)}" alt="${escapeHtml(details.imageAlt)}" loading="lazy">` : ""}
+        </div>
+        <div class="portal-order-item-copy">
+          <strong>${escapeHtml(item.product_name || "Product")}</strong>
+          <small>SKU ${escapeHtml(item.sku || "Not recorded")}</small>
+          <div class="portal-order-item-options">
+            <span><small>Colour</small>${escapeHtml(details.colour)}</span>
+            <span><small>Size</small>${escapeHtml(details.size)}</span>
+          </div>
+        </div>
+        <div class="portal-order-item-quantity">
+          <small>Quantity</small>
+          <strong>${escapeHtml(item.quantity)}</strong>
+          <span>${money(item.line_total_cents)}</span>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
 async function renderOrders() {
   // VENDOR_ORDER_COMMISSION_PRIVACY_V2
   const query = supabase
     .from("vendor_orders")
     .select(
-      "id,public_reference,vendor_id,fulfilment_status,merchandise_subtotal_cents,merchandise_total_cents,discount_total_cents,discount_code,shipping_charge_cents,shipping_quote,commission_total_cents,created_at,orders(customer_name,customer_email),vendors(business_name)"
+      "id,public_reference,vendor_id,fulfilment_status,merchandise_subtotal_cents,merchandise_total_cents,discount_total_cents,discount_code,shipping_charge_cents,shipping_quote,commission_total_cents,created_at,orders(customer_name,customer_email),vendors(business_name),order_items(id,product_name,variant_description,sku,unit_price_cents,quantity,line_total_cents,product_variants(size,colour),products(product_media(public_url,alt_text,sort_order)))"
     )
     .order("created_at", {
       ascending: false
@@ -920,7 +977,7 @@ async function renderOrders() {
 
   if (error) throw error;
 
-  const orderRows = (orders || [])
+  const orderCards = (orders || [])
     .map((order) => {
 
       const vendor =
@@ -940,7 +997,7 @@ async function renderOrders() {
         packed: "ready_for_collection"
       })[order.fulfilment_status];
 
-      let action = "—";
+      let action = "";
 
       if (next) {
         action = `
@@ -973,82 +1030,37 @@ async function renderOrders() {
       }
 
       return `
-        <tr>
+        <article class="portal-order-card">
+          <header class="portal-order-card-header">
+            <div>
+              <p class="portal-order-reference">${escapeHtml(order.public_reference)}</p>
+              <span>${new Date(order.created_at).toLocaleString(CONFIG.locale)}</span>
+            </div>
+            <div class="portal-order-card-actions">
+              <span class="status-pill">${escapeHtml(order.fulfilment_status.replaceAll("_", " "))}</span>
+              ${action}
+            </div>
+          </header>
 
-          <td>
-            <strong>
-              ${escapeHtml(order.public_reference)}
-            </strong>
-            <br>
-            <small>
-              ${
-                new Date(
-                  order.created_at
-                ).toLocaleDateString(
-                  CONFIG.locale
-                )
-              }
-            </small>
-          </td>
+          <div class="portal-order-card-body">
+            <section class="portal-order-products" aria-label="Ordered products">
+              <h2>What was ordered</h2>
+              <div class="portal-order-item-list">
+                ${renderOrderItems(order.order_items || [])}
+              </div>
+            </section>
 
-          <td>
-            ${escapeHtml(
-              vendor?.business_name
-            )}
-          </td>
-
-          <td>
-            ${escapeHtml(
-              parent?.customer_name
-            )}
-            <br>
-            <small>
-              ${escapeHtml(
-                parent?.customer_email
-              )}
-            </small>
-          </td>
-
-          <td>
-            ${
-              money(
-                Number(
-                  order.merchandise_total_cents
-                ) +
-                Number(
-                  order.shipping_charge_cents
-                )
-              )
-            }
-            ${Number(order.discount_total_cents) > 0 ? `<br><small>${escapeHtml(order.discount_code || "Discount")}: −${money(order.discount_total_cents)} off store items</small>` : ""}
-          </td>
-
-          ${
-              area === "admin"
-                ? `
-                  <td>
-                    ${money(order.commission_total_cents)}
-                  </td>
-                `
-                : ""
-            }
-
-          <td>
-            <span class="status-pill">
-              ${
-                escapeHtml(
-                  order.fulfilment_status
-                    .replaceAll("_", " ")
-                )
-              }
-            </span>
-          </td>
-
-          <td>
-            ${action}
-          </td>
-
-        </tr>
+            <aside class="portal-order-summary-card">
+              <div><small>Customer</small><strong>${escapeHtml(parent?.customer_name || "Customer")}</strong><span>${escapeHtml(parent?.customer_email || "No email recorded")}</span></div>
+              ${area === "admin" ? `<div><small>Store</small><strong>${escapeHtml(vendor?.business_name || "Store")}</strong></div>` : ""}
+              <div><small>Merchandise</small><strong>${money(order.merchandise_total_cents)}</strong></div>
+              <div><small>Shipping</small><strong>${money(order.shipping_charge_cents)}</strong></div>
+              ${Number(order.discount_total_cents) > 0 ? `<div><small>${escapeHtml(order.discount_code || "Discount")}</small><strong>-${money(order.discount_total_cents)}</strong></div>` : ""}
+              ${area === "admin" ? `<div><small>Commission</small><strong>${money(order.commission_total_cents)}</strong></div>` : ""}
+              <div class="portal-order-total"><small>Package total</small><strong>${money(Number(order.merchandise_total_cents) + Number(order.shipping_charge_cents))}</strong></div>
+            </aside>
+          </div>
+        </article>
       `;
     })
     .join("");
@@ -1062,38 +1074,14 @@ async function renderOrders() {
       )
     }
 
-    <section class="dashboard-panel">
-
-      <div class="table-scroll">
-
-        <table class="data-table">
-
-          <thead>
-            <tr>
-              <th>Package</th>
-              <th>Store</th>
-              <th>Customer</th>
-              <th>Value</th>
-              ${
-                area === "admin"
-                  ? "<th>Commission</th>"
-                  : ""
-              }
-              <th>Status</th>
-              <th>Move</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            ${orderRows}
-          </tbody>
-
-        </table>
-
-      </div>
-
+    <section class="portal-order-list">
+      ${orderCards || `<div class="dashboard-panel"><p>No paid orders are available yet.</p></div>`}
     </section>
   `;
+
+  content.querySelectorAll("[data-order-product-image]").forEach((image) => {
+    image.addEventListener("error", () => image.remove(), { once: true });
+  });
 
 
   // COLLECTION_SCHEDULE_UI_V1
