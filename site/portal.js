@@ -945,7 +945,7 @@ function renderOrderItems(items) {
         <div class="portal-order-item-quantity">
           <small>Quantity</small>
           <strong>${escapeHtml(item.quantity)}</strong>
-          <span>${money(item.line_total_cents)}</span>
+          <span>Item total ${money(item.line_total_cents)}</span>
         </div>
       </article>
     `;
@@ -1053,9 +1053,9 @@ async function renderOrders() {
             <aside class="portal-order-summary-card">
               <div><small>Customer</small><strong>${escapeHtml(parent?.customer_name || "Customer")}</strong><span>${escapeHtml(parent?.customer_email || "No email recorded")}</span></div>
               ${area === "admin" ? `<div><small>Store</small><strong>${escapeHtml(vendor?.business_name || "Store")}</strong></div>` : ""}
-              <div><small>Merchandise</small><strong>${money(order.merchandise_total_cents)}</strong></div>
-              <div><small>Shipping</small><strong>${money(order.shipping_charge_cents)}</strong></div>
+              <div><small>Items subtotal</small><strong>${money(order.merchandise_subtotal_cents)}</strong></div>
               ${Number(order.discount_total_cents) > 0 ? `<div><small>${escapeHtml(order.discount_code || "Discount")}</small><strong>-${money(order.discount_total_cents)}</strong></div>` : ""}
+              <div><small>Shipping</small><strong>${money(order.shipping_charge_cents)}</strong></div>
               ${area === "admin" ? `<div><small>Commission</small><strong>${money(order.commission_total_cents)}</strong></div>` : ""}
               <div class="portal-order-total"><small>Package total</small><strong>${money(Number(order.merchandise_total_cents) + Number(order.shipping_charge_cents))}</strong></div>
             </aside>
