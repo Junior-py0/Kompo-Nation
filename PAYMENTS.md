@@ -58,6 +58,14 @@ Yoco uses a single Checkout API secret and is the quickest code path to
 configure. Live keys remain locked until Yoco approves a verified production
 domain.
 
+From a PowerShell prompt at the repository root, the activation helper securely
+prompts for the live secret, creates an unpaid R2 checkout test, registers the
+signed webhook, saves the one-time webhook secret, and activates Yoco:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\activate-yoco.ps1
+```
+
 ```text
 PAYMENT_PROVIDER=yoco
 YOCO_SECRET_KEY=sk_live_...
