@@ -4490,9 +4490,23 @@ async function start() {
           catalogue.stores;
       }
 
-      if (catalogue?.products.length) {
+      if (Array.isArray(catalogue?.products)) {
         state.products =
           catalogue.products;
+
+        const liveProductIds = new Set(
+          state.products.map((product) => product.id)
+        );
+
+        state.cart = state.cart.filter(
+          (line) => liveProductIds.has(line.productId)
+        );
+
+        state.wishlist = state.wishlist.filter(
+          (productId) => liveProductIds.has(productId)
+        );
+
+        saveCommerceState();
       }
 
     } catch (error) {
