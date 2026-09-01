@@ -233,6 +233,7 @@ Deno.serve(async (request: Request) => {
         providerSlug: "fixed",
         courierName: "Nationwide delivery",
         serviceName: "Door-to-door delivery",
+        collectionCutoffTime: "",
         amountCents: Number(
           Deno.env.get(
             "DEFAULT_DELIVERY_CENTS",
@@ -496,6 +497,11 @@ Deno.serve(async (request: Request) => {
         amountCents:
           customerDeliveryCents,
 
+        // These components are signed as well, because settlement reporting
+        // must not trust browser-editable courier cost or margin fields.
+        courierCostCents,
+        logisticsFeeCents,
+
         destinationPostalCode:
           address.postalCode,
 
@@ -513,9 +519,6 @@ Deno.serve(async (request: Request) => {
 
         serviceName:
           selected.serviceName,
-
-        courierCostCents,
-        logisticsFeeCents,
 
         collectionCutoffTime:
           String(

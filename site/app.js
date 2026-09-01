@@ -1908,7 +1908,7 @@ async function beginCheckout(event) {
 
       <p class="checkout-review-note">
         <small>
-          You will be redirected to Paystack only after you continue.
+          You will be redirected to our secure payment provider only after you continue.
           Delivery quotes can expire, so complete payment shortly after reviewing the order.
         </small>
       </p>
@@ -3481,8 +3481,9 @@ const KOMPO_LEGAL_PAGES = {
           </p>
 
           <p>
-            Payments are processed through
-            Paystack. A transaction is not treated
+            Payments are processed through an
+            authorised payment provider, currently
+            Paystack, Stitch or Yoco. A transaction is not treated
             as successfully paid merely because a
             browser returns to Kompo Nation.
             Payment must be confirmed through the
@@ -3782,6 +3783,7 @@ const KOMPO_LEGAL_PAGES = {
           <p>
             Kompo Nation uses third-party services
             including hosting, Supabase, Paystack,
+            Stitch, Yoco,
             courier and communication providers.
           </p>
 
@@ -4082,7 +4084,8 @@ const KOMPO_LEGAL_PAGES = {
           <p>
             Relevant information may be shared with
             the vendor fulfilling an order,
-            Paystack, Bob Go and participating
+            payment providers (including Paystack
+            Stitch or Yoco), Bob Go and participating
             couriers, Supabase, hosting providers,
             communication providers and authorised
             professional or regulatory parties where

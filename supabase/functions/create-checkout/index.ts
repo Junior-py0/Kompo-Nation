@@ -6,6 +6,11 @@ import {
   rpc,
   supabaseRequest,
 } from "../_shared/runtime.ts";
+import {
+  allowsPlatformCollection,
+  configuredPaymentProvider,
+  initializePayment,
+} from "../_shared/payments.ts";
 
 const encoder = new TextEncoder();
 
@@ -16,6 +21,8 @@ function canonicalQuote(quote: any): string {
     quote.serviceLevelCode,
     quote.providerSlug,
     quote.amountCents,
+    quote.courierCostCents,
+    quote.logisticsFeeCents,
     quote.destinationPostalCode,
     quote.expiresAt,
   ].join("|");
@@ -339,6 +346,48 @@ Deno.serve(
           ),
         );
 
+      const paymentProvider =
+        configuredPaymentProvider();
+
+      const vendors =
+        await supabaseRequest(
+          `vendors?select=id,is_platform_owned&id=in.(${
+            [...expectedVendors].join(",")
+          })`,
+        );
+
+      if (vendors.length !== expectedVendors.size) {
+        return json(
+          request,
+          409,
+          {
+            error:
+              "One or more stores are no longer available.",
+          },
+        );
+      }
+
+      const hasExternalVendors =
+        vendors.some(
+          (vendor: any) =>
+            !vendor.is_platform_owned,
+        );
+
+      if (
+        paymentProvider !== "paystack" &&
+        hasExternalVendors &&
+        !allowsPlatformCollection()
+      ) {
+        return json(
+          request,
+          503,
+          {
+            error:
+              `${paymentProvider} checkout for outside stores is disabled until platform collection and manual vendor payouts are approved.`,
+          },
+        );
+      }
+
       const quotedVendors =
         new Set(
           body.quotes.map(
@@ -374,13 +423,16 @@ Deno.serve(
       }
 
       // ------------------------------------------------------
-      // Create order + reservations using Paystack RPC.
+      // Create an order and reservations for the active payment provider.
       // ------------------------------------------------------
 
       const order =
         await rpc(
-          "create_paystack_checkout",
+          "create_payment_checkout",
           {
+            p_provider:
+              paymentProvider,
+
             p_customer_id:
               user.id,
 
@@ -437,38 +489,6 @@ Deno.serve(
           "SITE_URL",
         ).replace(/\/$/, "");
 
-      const paystackBody:
-        Record<
-          string,
-          unknown
-        > = {
-          email:
-            order.customerEmail,
-
-          amount:
-            String(
-              order.amountCents,
-            ),
-
-          currency: "ZAR",
-
-          reference:
-            order.publicReference,
-
-          callback_url:
-            `${siteUrl}/payment-success`,
-
-          metadata:
-            JSON.stringify({
-              orderId:
-                order.orderId,
-
-              publicReference:
-                order
-                  .publicReference,
-            }),
-        };
-
       const splits =
         Array.isArray(
           order.splits,
@@ -476,83 +496,86 @@ Deno.serve(
           ? order.splits
           : [];
 
-      // VENDOR_LIABILITY_RECOVERY_V1
-      const recoveryPlan = await rpc("reserve_vendor_liability_recoveries",{p_order_id:order.orderId});
-      const recoveryBySubaccount = new Map((Array.isArray(recoveryPlan)?recoveryPlan:[]).map((x:any)=>[String(x?.subaccount||""),Math.max(0,Number(x?.deductionCents||0))]));
-      const adjustedSplits = splits.map((s:any)=>({...s,share:Math.max(0,Number(s?.share||0)-(recoveryBySubaccount.get(String(s?.subaccount||""))||0))})).filter((s:any)=>s.subaccount&&Number(s.share)>0);
+      let adjustedSplits: Array<{
+        subaccount: string;
+        share: number;
+      }> = [];
 
-      // Dynamic flat split:
-      // outside vendors receive their vendor-net merchandise.
-      // Kompo retains commission + delivery + platform-owned sales.
-      if (adjustedSplits.length) {
-        paystackBody.split = {
-          type: "flat",
+      // Paystack remains responsible for automated vendor splits and liability
+      // deductions. Stitch collects into Kompo's merchant account; outside-vendor
+      // settlement is therefore an explicit manual/platform process.
+      if (paymentProvider === "paystack") {
+        const recoveryPlan = await rpc(
+          "reserve_vendor_liability_recoveries",
+          { p_order_id: order.orderId },
+        );
+        const recoveryBySubaccount = new Map<string, number>(
+          (Array.isArray(recoveryPlan) ? recoveryPlan : []).map(
+            (entry: any): [string, number] => [
+              String(entry?.subaccount || ""),
+              Math.max(0, Number(entry?.deductionCents || 0)),
+            ],
+          ),
+        );
 
-          bearer_type:
-            "account",
-
-          subaccounts:
-            adjustedSplits.map(
-              (split: any) => ({
-                subaccount:
-                  split
-                    .subaccount,
-
-                share:
-                  Number(
-                    split.share,
-                  ),
-              }),
-            ),
-        };
+        adjustedSplits = splits.map((split: any) => ({
+          subaccount: String(split?.subaccount || ""),
+          share: Math.max(
+            0,
+            Number(split?.share || 0) -
+              (recoveryBySubaccount.get(String(split?.subaccount || "")) || 0),
+          ),
+        })).filter((split: any) => split.subaccount && split.share > 0);
       }
 
-      // ------------------------------------------------------
-      // Initialize transaction with Paystack.
-      // ------------------------------------------------------
+      const initialization =
+        await initializePayment({
+          provider:
+            paymentProvider,
 
-      const paystackResponse =
-        await fetch(
-          "https://api.paystack.co/transaction/initialize",
-          {
-            method: "POST",
+          email:
+            order.customerEmail,
 
-            headers: {
-              Authorization:
-                `Bearer ${
-                  required(
-                    "PAYSTACK_SECRET_KEY",
-                  )
-                }`,
+          amountCents:
+            Number(order.amountCents),
 
-              "Content-Type":
-                "application/json",
-            },
+          reference:
+            order.publicReference,
 
-            body:
-              JSON.stringify(
-                paystackBody,
-              ),
+          orderId:
+            order.orderId,
+
+          customerId:
+            user.id,
+
+          fullName:
+            order.customerName,
+
+          phone:
+            order.customerPhone,
+
+          expiresAt:
+            order.expiresAt,
+
+          successUrl:
+            `${siteUrl}/payment-success`,
+
+          cancelUrl:
+            `${siteUrl}/payment-cancelled`,
+
+          metadata: {
+            payment_kind:
+              "marketplace_order",
+
+            settlement_mode:
+              paymentProvider !== "paystack"
+                ? "platform_collection"
+                : "provider_split",
           },
-        );
 
-      const paystack =
-        await paystackResponse
-          .json();
-
-      if (
-        !paystackResponse.ok ||
-        !paystack?.status ||
-        !paystack?.data
-          ?.authorization_url ||
-        !paystack?.data
-          ?.reference
-      ) {
-        throw new Error(
-          paystack?.message ||
-          "Paystack could not initialize the payment.",
-        );
-      }
+          paystackSplits:
+            adjustedSplits,
+        });
 
       // Save initialization response for traceability.
       await supabaseRequest(
@@ -566,11 +589,21 @@ Deno.serve(
 
           body: {
             provider:
-              "paystack",
+              paymentProvider,
+
+            provider_reference:
+              initialization
+                .providerReference,
 
             provider_payload: {
               initialization:
-                paystack.data,
+                initialization
+                  .providerPayload,
+
+              settlementMode:
+                paymentProvider !== "paystack"
+                  ? "platform_collection"
+                  : "provider_split",
             },
 
             updated_at:
@@ -587,16 +620,19 @@ Deno.serve(
           ok: true,
 
           authorizationUrl:
-            paystack.data
-              .authorization_url,
+            initialization
+              .authorizationUrl,
 
           accessCode:
-            paystack.data
-              .access_code,
+            initialization
+              .accessCode,
 
           reference:
-            paystack.data
-              .reference,
+            initialization
+              .providerReference,
+
+          provider:
+            paymentProvider,
 
           orderReference:
             order

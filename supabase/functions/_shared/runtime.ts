@@ -4,6 +4,8 @@
   serviceLevelCode: string;
   providerSlug: string;
   amountCents: number;
+  courierCostCents: number;
+  logisticsFeeCents: number;
   destinationPostalCode: string;
   expiresAt: string;
   signature?: string;
@@ -268,6 +270,8 @@ function canonicalQuote(quote: Quote): string {
     quote.serviceLevelCode,
     quote.providerSlug,
     quote.amountCents,
+    quote.courierCostCents,
+    quote.logisticsFeeCents,
     quote.destinationPostalCode,
     quote.expiresAt,
   ].join("|");

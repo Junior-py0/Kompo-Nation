@@ -1088,6 +1088,80 @@ async function renderOrders() {
   }
 }
 
+/* ========================================================================== */
+/* 06B. PLATFORM-COLLECTION SETTLEMENTS                                       */
+/* ========================================================================== */
+async function renderSettlements() {
+  if (area !== "admin") return renderOverview();
+
+  const { data, error } = await supabase.rpc("admin_settlement_dashboard");
+  if (error) throw error;
+
+  const summary = data?.summary || {};
+  const storePayouts = Array.isArray(data?.storePayouts) ? data.storePayouts : [];
+  const courierCharges = Array.isArray(data?.courierCharges) ? data.courierCharges : [];
+  const recentStorePayouts = Array.isArray(data?.recentStorePayouts) ? data.recentStorePayouts : [];
+  const recentCourierSettlements = Array.isArray(data?.recentCourierSettlements) ? data.recentCourierSettlements : [];
+
+  const storeRows = storePayouts.map((item) => `
+    <tr>
+      <td><strong>${escapeHtml(item.reference)}</strong><br><small>${new Date(item.createdAt).toLocaleDateString(CONFIG.locale)}</small></td>
+      <td>${escapeHtml(item.storeName)}</td>
+      <td><span class="status-pill">${escapeHtml(item.provider)}</span></td>
+      <td><span class="status-pill">${escapeHtml(String(item.fulfilmentStatus || "new").replaceAll("_", " "))}</span></td>
+      <td>${money(item.grossCents)}</td>
+      <td>${money(item.liabilityDeductionCents)}<br><small>${Number(item.liabilityDeductionCents) ? "Returns/refunds recovered" : "No deduction"}</small></td>
+      <td><strong>${money(item.dueCents)}</strong></td>
+      <td><button class="table-action" data-settle-store="${item.vendorOrderId}" data-settlement-label="${escapeHtml(`${item.storeName} · ${item.reference} · ${money(item.dueCents)}`)}">Mark store paid</button></td>
+    </tr>
+  `).join("");
+
+  const courierRows = courierCharges.map((item) => `
+    <tr>
+      <td><strong>${escapeHtml(item.reference)}</strong><br><small>${item.kind === "return" ? "Return / exchange" : "Customer order"}</small></td>
+      <td>${escapeHtml(item.storeName)}</td>
+      <td>${escapeHtml(item.courierName || item.provider)}</td>
+      <td>${money(item.collectedCents)}</td>
+      <td><strong>${money(item.dueCents)}</strong></td>
+      <td>${money(item.marginCents)}</td>
+      <td><button class="table-action" data-settle-courier="${item.shipmentId}" data-shipment-kind="${item.kind}" data-settlement-label="${escapeHtml(`${item.reference} · ${money(item.dueCents)}`)}">Mark courier paid</button></td>
+    </tr>
+  `).join("");
+
+  const recentStoreRows = recentStorePayouts.slice(0, 20).map((item) => `
+    <tr><td>${escapeHtml(item.reference)}</td><td>${escapeHtml(item.storeName)}</td><td>${money(item.paidCents)}</td><td>${money(item.liabilityDeductionCents)}</td><td>${escapeHtml(item.payoutReference)}</td><td>${new Date(item.paidAt).toLocaleString(CONFIG.locale)}</td></tr>
+  `).join("");
+
+  const recentCourierRows = recentCourierSettlements.slice(0, 20).map((item) => `
+    <tr><td>${item.kind === "return" ? "Return" : "Order"}</td><td>${escapeHtml(item.provider)}</td><td>${money(item.paidCents)}</td><td>${escapeHtml(item.settlementReference)}</td><td>${new Date(item.paidAt).toLocaleString(CONFIG.locale)}</td></tr>
+  `).join("");
+
+  content.innerHTML = `${header("MONEY CONTROL", "Settlements", "Reconcile platform-collected sales before paying stores, and match booked courier costs to Bob Go invoices or wallet deductions.")}
+    <div class="stat-grid">
+      <article class="stat-card"><span>Due to stores</span><strong>${money(summary.storeDueCents)}</strong><small>${storePayouts.length} unpaid package${storePayouts.length === 1 ? "" : "s"}</small></article>
+      <article class="stat-card"><span>Due to courier</span><strong>${money(summary.courierDueCents)}</strong><small>${courierCharges.length} unreconciled charge${courierCharges.length === 1 ? "" : "s"}</small></article>
+      <article class="stat-card"><span>Delivery collected</span><strong>${money(summary.shippingCollectedCents)}</strong><small>For listed courier charges</small></article>
+      <article class="stat-card"><span>Delivery margin</span><strong>${money(summary.shippingMarginCents)}</strong><small>Collected less courier cost</small></article>
+    </div>
+
+    <section class="dashboard-panel">
+      <div class="panel-heading"><div><p class="eyebrow">STORE PAYOUTS</p><h2>Amounts currently due</h2></div><span class="status-pill">Stitch / Yoco only</span></div>
+      <p>Store due = vendor-net merchandise less any open return or refund liability. Pay the displayed amount first, then record the bank reference. Payment-gateway fees are not deducted from the store amount and must be reconciled separately.</p>
+      <div class="table-scroll"><table class="data-table"><thead><tr><th>Package</th><th>Store</th><th>Collected by</th><th>Fulfilment</th><th>Gross net</th><th>Recovery</th><th>Pay store</th><th>Action</th></tr></thead><tbody>${storeRows || '<tr><td colspan="8">No store payouts are currently due.</td></tr>'}</tbody></table></div>
+    </section>
+
+    <section class="dashboard-panel">
+      <div class="panel-heading"><div><p class="eyebrow">COURIER RECONCILIATION</p><h2>Booked charges not marked paid</h2></div><span class="status-pill">Bob Go</span></div>
+      <p>The customer delivery amount and booked courier cost are shown separately. Compare the booked amount with the Bob Go wallet, invoice, or payment record before marking it paid.</p>
+      <div class="table-scroll"><table class="data-table"><thead><tr><th>Reference</th><th>Store</th><th>Courier</th><th>Collected</th><th>Courier cost</th><th>Margin</th><th>Action</th></tr></thead><tbody>${courierRows || '<tr><td colspan="7">No courier charges are waiting for reconciliation.</td></tr>'}</tbody></table></div>
+    </section>
+
+    <div class="dashboard-grid">
+      <section class="dashboard-panel"><div class="panel-heading"><h2>Recent store payouts</h2></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Package</th><th>Store</th><th>Paid</th><th>Recovery</th><th>Reference</th><th>When</th></tr></thead><tbody>${recentStoreRows || '<tr><td colspan="6">No store payouts recorded.</td></tr>'}</tbody></table></div></section>
+      <section class="dashboard-panel"><div class="panel-heading"><h2>Recent courier payments</h2></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Kind</th><th>Provider</th><th>Paid</th><th>Reference</th><th>When</th></tr></thead><tbody>${recentCourierRows || '<tr><td colspan="5">No courier payments recorded.</td></tr>'}</tbody></table></div></section>
+    </div>`;
+}
+
 // RETURN_MANAGEMENT_V2
 async function portalReturnApi(action,body={}){const{data:{session}}=await supabase.auth.getSession();if(!session)throw new Error("Sign in again.");const res=await fetch(`${CONFIG.functionsBase}/return-logistics`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({action,...body})}),x=await res.json();if(!res.ok)throw new Error(x.error||"Return logistics failed.");return x}
 async function renderReturns(){
@@ -1099,16 +1173,16 @@ async function renderReturns(){
  else if(r.status==="under_review")action=state.isAdmin?`<button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="vendor">Store responsible</button><button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="customer">Customer responsible</button><button class="table-action" data-return-decision="${r.id}" data-decision="approve" data-responsibility="kompo">Kompo responsible</button>`:"<p>Waiting for Kompo Nation.</p>";
  else if(["approved","in_transit"].includes(r.status))action=!rev?`<button class="primary-button" data-prepare-return="${r.id}">Prepare return courier</button>`:rev.status==="awaiting_payment"?"<p>Waiting for customer payment.</p>":`<button class="primary-button" data-return-received="${r.id}">Returned parcel received</button>`;
  else if(r.status==="received"&&r.resolution_type==="exchange")action=!ex?`<button class="primary-button" data-prepare-exchange="${r.id}">Prepare replacement delivery</button>`:ex.status==="awaiting_payment"?"<p>Waiting for customer replacement-delivery payment.</p>":ex.status==="delivered"?`<button class="table-action" data-close-exchange="${r.id}">Close exchange</button>`:`<p>Replacement: <strong>${escapeHtml(ex.status.replaceAll("_"," "))}</strong></p>`;
- else if(r.status==="received"&&r.resolution_type==="refund")action=state.isAdmin?`<button class="primary-button" data-confirm-refund="${r.id}">I refunded this in Paystack</button><small>Refund in Paystack first; this then records vendor-net recovery.</small>`:"<p>Waiting for Kompo Nation refund.</p>";
+ else if(r.status==="received"&&r.resolution_type==="refund")action=state.isAdmin?`<button class="primary-button" data-confirm-refund="${r.id}">I completed the provider refund</button><small>Refund through the original payment provider first; this then records vendor-net recovery.</small>`:"<p>Waiting for Kompo Nation refund.</p>";
  const ss=ships.map(s=>`<div class="return-shipment-mini"><span>${s.leg==="reverse"?"Return":"Replacement"} Â· ${escapeHtml(s.status.replaceAll("_"," "))}</span>${s.total_charge_cents!=null?`<strong>${money(s.total_charge_cents)}</strong><small>Courier ${money(s.courier_cost_cents||0)} Â· Logistics ${money(s.logistics_fee_cents||0)}</small>`:""}${s.tracking_url?`<a class="table-action" href="${escapeHtml(s.tracking_url)}" target="_blank" rel="noopener">Track</a>`:""}</div>`).join("");
  return `<article class="return-card"><div class="return-heading"><div><p class="eyebrow">${escapeHtml(r.public_reference)}</p><h2>${r.resolution_type==="exchange"?"Exchange":"Refund"} Â· ${escapeHtml(v?.business_name||"Store")}</h2><p>${escapeHtml(c?.full_name||"Customer")} Â· ${escapeHtml(r.reason)}</p></div><span class="status-pill">${escapeHtml(r.status.replaceAll("_"," "))}</span></div>${r.customer_note?`<p><strong>Customer note:</strong> ${escapeHtml(r.customer_note)}</p>`:""}${r.exchange_note?`<p><strong>Replacement:</strong> ${escapeHtml(r.exchange_note)}</p>`:""}<p>Responsibility: <strong>${r.responsibility==="vendor"?"Store":r.responsibility==="customer"?"Customer":r.responsibility==="kompo"?"Kompo Nation":"Not decided"}</strong></p><div class="return-shipment-summary">${ss}</div><div class="return-actions">${action}</div></article>`}).join("");
- content.innerHTML=`${header("AFTER-SALES","Returns & exchanges","Approve requests, assign responsibility, book reverse courier movement and recover store-responsible costs.")}<section class="dashboard-panel"><p class="eyebrow">OUTSTANDING RETURN BALANCE</p><h2>${money(owing)}</h2><p>Open return/refund amounts owed to Kompo Nation. Future vendor Paystack shares repay this balance automatically.</p></section><div class="return-list">${cards||"<section class='dashboard-panel'><p>No return requests yet.</p></section>"}</div>`;
+ content.innerHTML=`${header("AFTER-SALES","Returns & exchanges","Approve requests, assign responsibility, book reverse courier movement and recover store-responsible costs.")}<section class="dashboard-panel"><p class="eyebrow">OUTSTANDING RETURN BALANCE</p><h2>${money(owing)}</h2><p>Open return/refund amounts owed to Kompo Nation. Automated recovery applies to Paystack splits; platform-collected payments require the same deduction during vendor payout.</p></section><div class="return-list">${cards||"<section class='dashboard-panel'><p>No return requests yet.</p></section>"}</div>`;
 }
 function onePortal(v){return Array.isArray(v)?v[0]:v}
 async function renderCancellations() {
   const { data: requests, error } = await supabase.from("order_cancellation_requests").select("id,public_reference,reason,status,refund_amount_cents,requested_at,vendors(business_name),profiles(full_name),vendor_orders(public_reference)").order("requested_at", { ascending: false }).limit(100);
   if (error) throw error;
-  content.innerHTML = `${header("PAYMENT CONTROL", "Cancellations", "Review customer requests before recording the Paystack refund outcome.")}<section class="dashboard-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>Request</th><th>Package</th><th>Store</th><th>Customer</th><th>Value</th><th>Status</th><th>Review</th></tr></thead><tbody>${requests.map((item) => { const vendor = Array.isArray(item.vendors) ? item.vendors[0] : item.vendors; const customer = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles; const vendorOrder = Array.isArray(item.vendor_orders) ? item.vendor_orders[0] : item.vendor_orders; return `<tr><td><strong>${escapeHtml(item.public_reference)}</strong><br><small>${escapeHtml(item.reason)}</small></td><td>${escapeHtml(vendorOrder?.public_reference)}</td><td>${escapeHtml(vendor?.business_name)}</td><td>${escapeHtml(customer?.full_name || "Customer")}</td><td>${money(item.refund_amount_cents)}</td><td><span class="status-pill">${escapeHtml(item.status.replaceAll("_", " "))}</span></td><td>${item.status === "requested" ? `<button class="table-action" data-cancellation-status="${item.id}" data-next-status="under_review">Review</button>` : "Confirm in Paystack"}</td></tr>`; }).join("")}</tbody></table></div></section>`;
+  content.innerHTML = `${header("PAYMENT CONTROL", "Cancellations", "Review customer requests before recording the original payment-provider refund outcome.")}<section class="dashboard-panel"><div class="table-scroll"><table class="data-table"><thead><tr><th>Request</th><th>Package</th><th>Store</th><th>Customer</th><th>Value</th><th>Status</th><th>Review</th></tr></thead><tbody>${requests.map((item) => { const vendor = Array.isArray(item.vendors) ? item.vendors[0] : item.vendors; const customer = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles; const vendorOrder = Array.isArray(item.vendor_orders) ? item.vendor_orders[0] : item.vendor_orders; return `<tr><td><strong>${escapeHtml(item.public_reference)}</strong><br><small>${escapeHtml(item.reason)}</small></td><td>${escapeHtml(vendorOrder?.public_reference)}</td><td>${escapeHtml(vendor?.business_name)}</td><td>${escapeHtml(customer?.full_name || "Customer")}</td><td>${money(item.refund_amount_cents)}</td><td><span class="status-pill">${escapeHtml(item.status.replaceAll("_", " "))}</span></td><td>${item.status === "requested" ? `<button class="table-action" data-cancellation-status="${item.id}" data-next-status="under_review">Review</button>` : "Confirm with provider"}</td></tr>`; }).join("")}</tbody></table></div></section>`;
 }
 
 /* ========================================================================== */
@@ -1416,6 +1490,43 @@ async function renderSettings() {
 async function handlePortalClick(event) {
   const openView = event.target.closest("[data-open-view]");
   if (openView) return setActiveView(openView.dataset.openView);
+
+  const settleStore = event.target.closest("[data-settle-store]");
+  if (settleStore) {
+    if (!confirm(`Confirm the store has been paid?\n\n${settleStore.dataset.settlementLabel}`)) return;
+    const reference = prompt("Enter the bank transfer or payout reference:");
+    if (reference === null) return;
+    if (!reference.trim()) return toast("A payout reference is required.");
+    const note = prompt("Optional payout note:") || null;
+    settleStore.disabled = true;
+    const { error } = await supabase.rpc("admin_mark_vendor_order_paid", {
+      p_vendor_order_id: settleStore.dataset.settleStore,
+      p_reference: reference.trim(),
+      p_note: note?.trim() || null,
+    });
+    if (error) { settleStore.disabled = false; return toast(error.message); }
+    toast("Store payout recorded.");
+    return renderSettlements();
+  }
+
+  const settleCourier = event.target.closest("[data-settle-courier]");
+  if (settleCourier) {
+    if (!confirm(`Confirm this courier charge has been paid or deducted?\n\n${settleCourier.dataset.settlementLabel}`)) return;
+    const reference = prompt("Enter the Bob Go invoice, wallet, or payment reference:");
+    if (reference === null) return;
+    if (!reference.trim()) return toast("A courier payment reference is required.");
+    const note = prompt("Optional reconciliation note:") || null;
+    settleCourier.disabled = true;
+    const { error } = await supabase.rpc("admin_mark_courier_paid", {
+      p_kind: settleCourier.dataset.shipmentKind,
+      p_shipment_id: settleCourier.dataset.settleCourier,
+      p_reference: reference.trim(),
+      p_note: note?.trim() || null,
+    });
+    if (error) { settleCourier.disabled = false; return toast(error.message); }
+    toast("Courier payment recorded.");
+    return renderSettlements();
+  }
   const toggle = event.target.closest("[data-toggle-form]");
   if (toggle) { const target = document.querySelector(`#${CSS.escape(toggle.dataset.toggleForm)}`); target.hidden = !target.hidden; return; }
   const manageStore = event.target.closest("[data-manage-store]");
@@ -1678,7 +1789,7 @@ const manageProduct = event.target.closest("[data-manage-product]");
   const pr=event.target.closest("[data-prepare-return]");if(pr){try{await portalReturnApi("prepare-reverse",{returnId:pr.dataset.prepareReturn});toast("Return courier prepared.")}catch(e){toast(e.message)}return renderReturns()}
   const rr=event.target.closest("[data-return-received]");if(rr){const{error}=await supabase.rpc("mark_return_received_v2",{p_return_id:rr.dataset.returnReceived});if(error)return toast(error.message);toast("Returned parcel received.");return renderReturns()}
   const pe=event.target.closest("[data-prepare-exchange]");if(pe){try{await portalReturnApi("prepare-exchange",{returnId:pe.dataset.prepareExchange});toast("Replacement delivery prepared.")}catch(e){toast(e.message)}return renderReturns()}
-  const rf=event.target.closest("[data-confirm-refund]");if(rf){if(!confirm("Confirm only after the customer refund is completed in Paystack."))return;const{error}=await supabase.rpc("confirm_return_refund_v2",{p_return_id:rf.dataset.confirmRefund});if(error)return toast(error.message);toast("Refund recorded; vendor recovery updated.");return renderReturns()}
+  const rf=event.target.closest("[data-confirm-refund]");if(rf){if(!confirm("Confirm only after the customer refund is completed through the original payment provider."))return;const{error}=await supabase.rpc("confirm_return_refund_v2",{p_return_id:rf.dataset.confirmRefund});if(error)return toast(error.message);toast("Refund recorded; vendor recovery updated.");return renderReturns()}
   const ce=event.target.closest("[data-close-exchange]");if(ce){const{error}=await supabase.rpc("close_exchange_return_v2",{p_return_id:ce.dataset.closeExchange});if(error)return toast(error.message);toast("Exchange closed.");return renderReturns()}
 
 }
@@ -1970,6 +2081,7 @@ async function renderView() {
   if (state.view === "stores") return renderStores();
   if (state.view === "products") return renderProducts();
   if (state.view === "orders") return renderOrders();
+  if (state.view === "settlements") return renderSettlements();
   if (state.view === "cancellations") return renderCancellations();
   if (state.view === "returns") return renderReturns();
   if (state.view === "information") return renderInformation();

@@ -334,7 +334,9 @@ Deno.serve(async (request: Request) => {
       status: "booked",
 
       cost_cents:
-        quote.amountCents || null,
+        quote.courierCostCents ??
+        quote.amountCents ??
+        null,
 
       provider_payload:
         shipment,
