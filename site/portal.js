@@ -269,7 +269,7 @@ async function loadStoreTeamPanel(vendorId) {
 async function renderStores() {
   const { data: stores, error } = await supabase
     .from("vendors")
-    .select("id,business_name,slug,status,commission_rate_bps,is_platform_owned,sales_count,featured_override,short_description,description,mark,accent,vendor_private_settings(contact_email,contact_phone,collection_street_address,collection_local_area,collection_city,collection_province,collection_postal_code,collection_country_code)")
+    .select("id,business_name,slug,status,commission_rate_bps,is_platform_owned,sales_count,featured_override,short_description,description,mark,accent,vendor_private_settings(contact_email,contact_phone,collection_street_address,collection_local_area,collection_city,collection_province,collection_postal_code,collection_country_code,package_length_cm,package_width_cm,package_height_cm,package_tare_weight_kg,package_item_capacity)")
     .order("business_name")
     .is("retired_at", null);
 
@@ -286,6 +286,10 @@ async function renderStores() {
       : store.featured_override === false
         ? "hidden"
         : "automatic";
+    const packageTareKg = Math.max(0, Number(privateRow?.package_tare_weight_kg || 0));
+    const packageWeight = packageTareKg < 1
+      ? { value: Math.round(packageTareKg * 1000), unit: "g" }
+      : { value: Number(packageTareKg.toFixed(3)), unit: "kg" };
 
     return `<article class="terminal-product-card">
       <div class="terminal-product-summary">
@@ -364,6 +368,45 @@ async function renderStores() {
                 <input data-store-postal="${store.id}" inputmode="numeric" value="${escapeHtml(privateRow?.collection_postal_code || "")}" required>
               </label>
             </div>
+          </section>
+
+          <section class="package-settings-card">
+            <div class="terminal-section-heading">
+              <div>
+                <h3>Standard shipping package</h3>
+                <p>Used for Bob Go delivery quotes and courier bookings for this store. These are the same values the vendor can manage in Store settings.</p>
+              </div>
+            </div>
+            <div class="package-dim-grid">
+              <label>Length (cm)
+                <input data-store-package-length="${store.id}" type="number" min="0.1" step="0.1" value="${escapeHtml(privateRow?.package_length_cm ?? "")}" required>
+              </label>
+              <label>Width (cm)
+                <input data-store-package-width="${store.id}" type="number" min="0.1" step="0.1" value="${escapeHtml(privateRow?.package_width_cm ?? "")}" required>
+              </label>
+              <label>Height (cm)
+                <input data-store-package-height="${store.id}" type="number" min="0.1" step="0.1" value="${escapeHtml(privateRow?.package_height_cm ?? "")}" required>
+              </label>
+            </div>
+            <div class="form-grid package-secondary-grid">
+              <div class="weight-unit-row">
+                <label>Empty packaging weight
+                  <input data-store-package-tare="${store.id}" type="number" min="0" step="0.001" value="${packageWeight.value}">
+                </label>
+                <label>Unit
+                  <select data-store-package-tare-unit="${store.id}">
+                    <option value="g" ${packageWeight.unit === "g" ? "selected" : ""}>grams</option>
+                    <option value="kg" ${packageWeight.unit === "kg" ? "selected" : ""}>kilograms</option>
+                  </select>
+                </label>
+              </div>
+              <label>Items per package
+                <input data-store-package-capacity="${store.id}" type="number" min="1" max="50" step="1" value="${Number(privateRow?.package_item_capacity || 3)}" required>
+                <small>Example: 3 means 1–3 items use one parcel; 4–6 use two.</small>
+              </label>
+            </div>
+            <div class="package-preview" data-store-package-preview="${store.id}">Enter the three dimensions to calculate volumetric weight.</div>
+            <small class="field-help">Measure the outside of the normal box or mailer. Volumetric weight = length × width × height ÷ 4000.</small>
           </section>
 
           <div class="form-grid">
@@ -477,6 +520,25 @@ async function renderStores() {
     <section class="terminal-product-list">
       ${rows || '<section class="dashboard-panel"><p>No stores yet.</p></section>'}
     </section>`;
+
+  const updateStorePackagePreview = (storeId) => {
+    const length = Number(document.querySelector(`[data-store-package-length="${CSS.escape(storeId)}"]`)?.value);
+    const width = Number(document.querySelector(`[data-store-package-width="${CSS.escape(storeId)}"]`)?.value);
+    const height = Number(document.querySelector(`[data-store-package-height="${CSS.escape(storeId)}"]`)?.value);
+    const preview = document.querySelector(`[data-store-package-preview="${CSS.escape(storeId)}"]`);
+    if (!preview) return;
+    preview.textContent = [length,width,height].every((value) => Number.isFinite(value) && value > 0)
+      ? `Estimated volumetric weight: ${(length * width * height / 4000).toFixed(2)} kg per package`
+      : "Enter the three dimensions to calculate volumetric weight.";
+  };
+
+  state.stores.forEach((store) => {
+    ["length", "width", "height"].forEach((field) => {
+      document.querySelector(`[data-store-package-${field}="${CSS.escape(store.id)}"]`)
+        ?.addEventListener("input", () => updateStorePackagePreview(store.id));
+    });
+    updateStorePackagePreview(store.id);
+  });
 }
 
 async function createStore(form) {
@@ -1609,6 +1671,16 @@ async function handlePortalClick(event) {
 
     saveStore.disabled = true;
     try {
+      const packageLengthCm = Number(document.querySelector(`[data-store-package-length="${CSS.escape(id)}"]`).value);
+      const packageWidthCm = Number(document.querySelector(`[data-store-package-width="${CSS.escape(id)}"]`).value);
+      const packageHeightCm = Number(document.querySelector(`[data-store-package-height="${CSS.escape(id)}"]`).value);
+      const packageTareWeightKg = weightToKg(
+        document.querySelector(`[data-store-package-tare="${CSS.escape(id)}"]`).value,
+        document.querySelector(`[data-store-package-tare-unit="${CSS.escape(id)}"]`).value,
+        true
+      );
+      const packageItemCapacity = Number(document.querySelector(`[data-store-package-capacity="${CSS.escape(id)}"]`).value);
+
       const privateSettings = {
         contact_email: fieldValue("email").toLowerCase(),
         contact_phone: fieldValue("phone"),
@@ -1618,10 +1690,22 @@ async function handlePortalClick(event) {
         collection_province: fieldValue("province"),
         collection_postal_code: fieldValue("postal"),
         collection_country_code: "ZA",
+        package_length_cm: packageLengthCm,
+        package_width_cm: packageWidthCm,
+        package_height_cm: packageHeightCm,
+        package_tare_weight_kg: packageTareWeightKg,
+        package_item_capacity: packageItemCapacity,
+        updated_at: new Date().toISOString(),
       };
 
       if (!privateSettings.contact_phone || !privateSettings.collection_street_address || !privateSettings.collection_city || !privateSettings.collection_province || !privateSettings.collection_postal_code) {
         throw new Error("Complete the store's contact phone and collection address before saving.");
+      }
+      if (![packageLengthCm, packageWidthCm, packageHeightCm].every((value) => Number.isFinite(value) && value > 0)) {
+        throw new Error("Enter valid standard package dimensions greater than 0 cm.");
+      }
+      if (!Number.isInteger(packageItemCapacity) || packageItemCapacity < 1 || packageItemCapacity > 50) {
+        throw new Error("Items per package must be a whole number from 1 to 50.");
       }
 
       const { error } = await supabase.rpc("admin_update_vendor_v2", {
@@ -1644,7 +1728,7 @@ async function handlePortalClick(event) {
         .eq("vendor_id", id);
       if (privateError) throw privateError;
 
-      toast("Store details and collection address saved.");
+      toast("Store details, collection address and shipping package saved.");
       return renderStores();
     } catch (error) {
       toast(error.message);
