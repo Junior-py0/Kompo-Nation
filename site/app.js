@@ -1123,7 +1123,7 @@ function renderInformation(type) {
 
     contact: [
       "Contact",
-      "Customer and vendor support details will be published before the closed alpha opens."
+      "Get help with an order, delivery, return, store or vendor account."
     ],
 
     privacy: [
@@ -1139,7 +1139,30 @@ function renderInformation(type) {
 
   const [title, copy] = pages[type];
   setMeta(title, copy);
-  setStructuredData({ "@context": "https://schema.org", "@type": "WebPage", name: title, description: copy, url: `${CONFIG.siteUrl}/${type}` });
+  setStructuredData(type === "contact"
+    ? {
+        "@context": "https://schema.org",
+        "@type": "ContactPage",
+        name: "Contact Kompo Nation",
+        description: copy,
+        url: `${CONFIG.siteUrl}/contact`,
+        mainEntity: {
+          "@type": "Organization",
+          name: "Kompo Nation",
+          url: CONFIG.siteUrl,
+          email: "mailto:ramashilokgotsofatso@gmail.com",
+          telephone: "+27727718727",
+          contactPoint: {
+            "@type": "ContactPoint",
+            contactType: "customer and vendor support",
+            email: "ramashilokgotsofatso@gmail.com",
+            telephone: "+27727718727",
+            areaServed: "ZA",
+            availableLanguage: "English"
+          }
+        }
+      }
+    : { "@context": "https://schema.org", "@type": "WebPage", name: title, description: copy, url: `${CONFIG.siteUrl}/${type}` });
 
   app.innerHTML = `
     <section class="page-hero">
@@ -1152,18 +1175,41 @@ function renderInformation(type) {
       </div>
     </section>
 
-    <section class="content-section empty-state glass">
-      <span>◇</span>
+    ${type === "contact" ? `
+      <section class="content-section contact-support-grid" aria-label="Kompo Nation support channels">
+        <a class="contact-support-card glass" href="mailto:ramashilokgotsofatso@gmail.com">
+          <span class="eyebrow">EMAIL SUPPORT</span>
+          <h2>Send us an email</h2>
+          <p>ramashilokgotsofatso@gmail.com</p>
+          <strong>Open email →</strong>
+        </a>
 
-      <h2>
-        Clear details, before launch.
-      </h2>
+        <a class="contact-support-card glass" href="tel:+27727718727">
+          <span class="eyebrow">PHONE SUPPORT</span>
+          <h2>Call us</h2>
+          <p>072 771 8727</p>
+          <strong>Call now →</strong>
+        </a>
 
-      <p>
-        This page is ready for the final operational
-        and legally reviewed policy.
-      </p>
-    </section>
+        <a class="contact-support-card glass" href="https://wa.me/27727718727" target="_blank" rel="noopener noreferrer">
+          <span class="eyebrow">WHATSAPP</span>
+          <h2>Message us</h2>
+          <p>072 771 8727</p>
+          <strong>Open WhatsApp →</strong>
+        </a>
+      </section>
+
+      <section class="content-section contact-support-note">
+        <h2>How we can help</h2>
+        <p>Include your order reference when asking about an existing purchase. Vendors can include their store name so we can route the request quickly.</p>
+      </section>
+    ` : `
+      <section class="content-section empty-state glass">
+        <span>◇</span>
+        <h2>Marketplace information</h2>
+        <p>${copy}</p>
+      </section>
+    `}
   `;
 }
 

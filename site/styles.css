@@ -256,6 +256,16 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .page-hero { width: min(calc(100% - 40px), var(--max)); margin: clamp(4rem, 8vw, 7rem) auto 2rem; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 2rem; }
 .page-hero h1 { margin-bottom: .8rem; font-size: clamp(3.1rem, 9vw, 7rem); }
 .page-hero p { max-width: 42rem; color: var(--muted); font-size: 1.08rem; }
+
+.contact-support-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-top: 3rem; }
+.contact-support-card { display: flex; min-height: 230px; padding: clamp(1.5rem, 4vw, 2.5rem); border-radius: var(--radius-lg); flex-direction: column; color: inherit; text-decoration: none; transition: transform .2s ease, border-color .2s ease; }
+.contact-support-card:hover, .contact-support-card:focus-visible { border-color: var(--ink); transform: translateY(-4px); }
+.contact-support-card h2 { margin: auto 0 .5rem; font-size: clamp(1.45rem, 3vw, 2rem); }
+.contact-support-card p { margin: 0 0 1.25rem; color: var(--muted); overflow-wrap: anywhere; }
+.contact-support-card strong { font-size: .88rem; letter-spacing: .04em; }
+.contact-support-note { max-width: 760px; margin-top: 0; text-align: center; }
+.contact-support-note h2 { margin-bottom: .75rem; font-size: clamp(1.8rem, 4vw, 2.8rem); }
+.contact-support-note p { color: var(--muted); }
 .filter-row { width: min(calc(100% - 40px), var(--max)); margin: 0 auto 2rem; display: flex; flex-wrap: wrap; gap: .65rem; }
 .filter-row button { padding: .7rem 1rem; border: 1px solid var(--line-light); border-radius: 99px; background: rgba(255,255,255,.48); cursor: pointer; }
 .filter-row button.active { color: white; background: var(--ink-soft); box-shadow: var(--shadow-sm); }
@@ -515,6 +525,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .product-gallery-thumbnail { flex-basis: 66px; }
   .page-hero { display: block; }
   .page-hero h1 { font-size: 3.4rem; }
+  .contact-support-grid { grid-template-columns: 1fr; }
+  .contact-support-card { min-height: 190px; }
   .cart-line { grid-template-columns: 76px 1fr; }
   .cart-line > strong { grid-column: 2; }
   .form-grid { grid-template-columns: 1fr; }
