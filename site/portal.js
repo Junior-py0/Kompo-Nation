@@ -11,9 +11,13 @@ const layout = document.querySelector("#portal-layout");
 const content = document.querySelector("#portal-content");
 const state = { session: null, isAdmin: false, vendorIds: [], stores: [], currentVendorId: null, view: "overview" };
 const money = (cents) => new Intl.NumberFormat(CONFIG.locale, { style: "currency", currency: CONFIG.currency }).format(Number(cents || 0) / 100);
-const customerPriceCents = (baseCents, markupRateBps = 1000) => Math.round(
-  Number(baseCents || 0) * (10000 + Number(markupRateBps || 0)) / 10000
-);
+const customerPriceCents = (baseCents, markupRateBps = 1000) => {
+  const base = Math.max(0, Math.round(Number(baseCents) || 0));
+  const rate = Math.max(0, Number(markupRateBps) || 0);
+  const markedUp = base * (10000 + rate) / 10000;
+  const charmPrice = Math.round(markedUp / 5000) * 5000 - 100;
+  return Math.max(base, charmPrice);
+};
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 
 function toast(message) {
@@ -636,7 +640,7 @@ async function renderProducts() {
   const productCards = products.map((product) => {
     const vendor = Array.isArray(product.vendors) ? product.vendors[0] : product.vendors;
     const productStore = state.stores.find((store) => store.id === product.vendor_id);
-    const markupRateBps = Number(productStore?.commission_rate_bps || 1000);
+    const markupRateBps = Number(productStore?.commission_rate_bps ?? 1000);
     const variants = product.product_variants || [];
     const media = (product.product_media || []).slice().sort((a,b) => Number(a.sort_order) - Number(b.sort_order));
     const totalStock = variants.reduce((sum,variant) => sum + Number(variant.stock_quantity), 0);
@@ -699,7 +703,7 @@ async function renderProducts() {
         </div>
 
         <section class="inventory-section">
-          <div class="terminal-section-heading"><div><h3>Sizes, colours, prices and stock</h3><p>Enter the vendor base price. The ${markupRateBps / 100}% customer markup is added automatically.</p></div></div>
+          <div class="terminal-section-heading"><div><h3>Sizes, colours, prices and stock</h3><p>Enter the vendor base price. The ${markupRateBps / 100}% markup is added, then the retail price is rounded to the nearest R50 and set R1 below it.</p></div></div>
           <div class="inventory-list">
             ${variants.map((variant) => `<article class="inventory-row">
               <div class="inventory-identity"><strong>${escapeHtml(variant.size)} · ${escapeHtml(variant.colour)}</strong><small>${escapeHtml(variant.sku)}</small></div>
@@ -1448,14 +1452,15 @@ function renderInformation() {
         <p>
           Your current Kompo Nation customer markup rate is
           <strong>${commissionPercent}%</strong>
-          above the vendor base price you enter.
+          above the vendor base price you enter. The result is rounded to the
+          nearest R50 and set R1 below that threshold for a cleaner retail price.
         </p>
 
         <p>
-          If your base price is R100, the customer sees R110. For an
-          undiscounted sale, your store keeps the full R100 base amount and
-          Kompo Nation receives the R10 markup. The markup is not deducted
-          from your base price.
+          If your base price is R550, the 10% target is R605 and the customer
+          sees R599. For an undiscounted sale, your store keeps the full R550
+          base amount and Kompo Nation receives R49. Retail rounding can reduce
+          Kompo Nation's markup, but never your base settlement.
         </p>
 
         <p>

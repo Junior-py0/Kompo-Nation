@@ -4332,17 +4332,20 @@ const KOMPO_LEGAL_PAGES = {
             Unless a different rate is expressly
             agreed with or configured for a vendor,
             Kompo Nation's standard customer price
-            markup is <strong>10% above the vendor's
-            submitted base price</strong>.
+            target is calculated at <strong>10% above
+            the vendor's submitted base price</strong>.
+            The result is rounded to the nearest R50
+            and set R1 below that threshold.
           </p>
 
           <p>
-            For example, a R100 vendor base price is
-            shown to the customer as R110. For an
-            undiscounted sale, the vendor settlement
-            remains R100 and the R10 markup is paid to
-            Kompo Nation. The markup is not deducted
-            from the vendor's base price.
+            For example, a R550 vendor base price has
+            a R605 target and is shown to the customer
+            as R599. For an undiscounted sale, the
+            vendor settlement remains R550 and the R49
+            difference is paid to Kompo Nation. Retail
+            rounding may reduce Kompo Nation's markup,
+            but never the vendor's base settlement.
           </p>
         `
       ],

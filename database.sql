@@ -538,7 +538,18 @@ $$;
 -- ============================================================================
 create or replace function public.customer_price_cents(p_base_cents bigint, p_markup_rate_bps integer)
 returns bigint language sql immutable strict set search_path = '' as $$
-  select greatest(0,p_base_cents) + round(greatest(0,p_base_cents) * greatest(0,p_markup_rate_bps) / 10000.0)::bigint;
+  with price_target as (
+    select
+      greatest(0,p_base_cents) as base_cents,
+      greatest(0,p_base_cents)::numeric *
+        (10000 + greatest(0,p_markup_rate_bps)) /
+        10000 as marked_up_cents
+  )
+  select greatest(
+    base_cents,
+    (round(marked_up_cents / 5000) * 5000 - 100)::bigint
+  )
+  from price_target;
 $$;
 
 create or replace function public.create_checkout(

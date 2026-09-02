@@ -1,6 +1,12 @@
 const { json, required, signQuote, supabaseRequest } = require("./lib/runtime");
 
 const mapAddress = (address) => ({ company: address.company || "", street_address: address.streetAddress, local_area: address.localArea || "", city: address.city, zone: address.province, country: address.country || "ZA", code: address.postalCode });
+const customerPriceCents = (baseCents, markupRateBps = 1000) => {
+  const base = Math.max(0, Math.round(Number(baseCents) || 0));
+  const rate = Math.max(0, Number(markupRateBps) || 0);
+  const markedUp = base * (10000 + rate) / 10000;
+  return Math.max(base, Math.round(markedUp / 5000) * 5000 - 100);
+};
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed." });
@@ -30,7 +36,7 @@ exports.handler = async (event) => {
       if (process.env.BOBGO_API_TOKEN) {
         if (!privateSettings?.collection_street_address || !privateSettings.collection_city || !privateSettings.collection_postal_code) return json(409, { error: `${vendor.business_name} must complete its collection address.` });
         const collectionAddress = { company: vendor.business_name, streetAddress: privateSettings.collection_street_address, localArea: privateSettings.collection_local_area || "", city: privateSettings.collection_city, province: privateSettings.collection_province || "", postalCode: privateSettings.collection_postal_code, country: privateSettings.collection_country_code || "ZA" };
-        const declaredValue = group.lines.reduce((sum, item) => sum + Math.round(Number(item.variant.price_cents) * (10000 + Number(vendor.commission_rate_bps || 1000)) / 10000) * Number(item.line.quantity), 0);
+        const declaredValue = group.lines.reduce((sum, item) => sum + customerPriceCents(item.variant.price_cents, vendor.commission_rate_bps ?? 1000) * Number(item.line.quantity), 0);
         const payload = {
           collection_address: mapAddress(collectionAddress), delivery_address: mapAddress(body.address),
           parcels: group.lines.map(({ line, product, variant }) => ({ description: `${product.name} × ${line.quantity}`, submitted_length_cm: Number(variant.length_cm), submitted_width_cm: Number(variant.width_cm), submitted_height_cm: Number(variant.height_cm), submitted_weight_kg: Number(variant.weight_kg) * Number(line.quantity), custom_parcel_reference: variant.sku })),

@@ -61,7 +61,7 @@ export async function onRequest(context) {
 
   const images = media.map((item) => absoluteUrl(item.public_url)).filter(Boolean);
   const aliases = storeAliases(vendor.business_name, vendor.slug);
-  const markupRateBps = Number(vendor.commission_rate_bps || 1000);
+  const markupRateBps = Number(vendor.commission_rate_bps ?? 1000);
   const aliasCopy = aliases.length ? `, also searched as ${aliases.join(" and ")}` : "";
   const description = `Shop ${product.name} by ${vendor.business_name}${aliasCopy} on Kompo Nation. ${product.description}`.slice(0, 300);
   const canonical = `${SITE_URL}/product/${encodeURIComponent(product.slug)}`;

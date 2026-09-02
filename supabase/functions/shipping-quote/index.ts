@@ -280,6 +280,19 @@ Deno.serve(async (request: Request) => {
               .collection_country_code || "ZA",
         };
 
+        const customerPriceCents = (
+          baseCents: number,
+          markupRateBps = 1000,
+        ) => {
+          const base = Math.max(0, Math.round(Number(baseCents) || 0));
+          const rate = Math.max(0, Number(markupRateBps) || 0);
+          const markedUp = base * (10000 + rate) / 10000;
+          return Math.max(
+            base,
+            Math.round(markedUp / 5000) * 5000 - 100,
+          );
+        };
+
         const declaredValue =
           group.lines.reduce(
             (
@@ -287,10 +300,9 @@ Deno.serve(async (request: Request) => {
               { line, variant },
             ) =>
               sum +
-              Math.round(
-                Number(variant.price_cents) *
-                (10000 + Number(vendor.commission_rate_bps || 1000)) /
-                10000
+              customerPriceCents(
+                Number(variant.price_cents),
+                Number(vendor.commission_rate_bps ?? 1000),
               ) *
                 Number(line.quantity),
             0,

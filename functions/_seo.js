@@ -23,9 +23,11 @@ export function absoluteUrl(value = "") {
 }
 
 export function customerPriceCents(baseCents, markupRateBps = 1000) {
-  return Math.round(
-    Number(baseCents || 0) * (10000 + Number(markupRateBps || 0)) / 10000,
-  );
+  const base = Math.max(0, Math.round(Number(baseCents) || 0));
+  const rate = Math.max(0, Number(markupRateBps) || 0);
+  const markedUp = base * (10000 + rate) / 10000;
+  const charmPrice = Math.round(markedUp / 5000) * 5000 - 100;
+  return Math.max(base, charmPrice);
 }
 
 export function storeAliases(name = "", slug = "") {
