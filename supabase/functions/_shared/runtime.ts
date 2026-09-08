@@ -257,10 +257,15 @@ export async function authenticatedUser(
     );
   }
 
-  return {
-    user: await response.json(),
-    token,
-  };
+  const user = await response.json();
+  const memberships = await supabaseRequest(
+    `app_memberships?user_id=eq.${encodeURIComponent(user.id)}&app_id=eq.kompo&select=user_id&limit=1`,
+  );
+  if (!memberships.length) {
+    throw new Error("This account is not registered with Kompo Nation.");
+  }
+
+  return { user, token };
 }
 
 function canonicalQuote(quote: Quote): string {

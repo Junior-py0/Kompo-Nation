@@ -8,17 +8,35 @@ const supabase = isSupabaseConfigured() && createClient
     })
   : null;
 
+const hasKompoMembership = async (userId) => {
+  const { data, error } = await supabase
+    .from("app_memberships")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("app_id", "kompo")
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+};
+
 const getSession = async () => {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  return data.session;
+  if (!data.session) return null;
+  if (await hasKompoMembership(data.session.user.id)) return data.session;
+  await supabase.auth.signOut({ scope: "local" });
+  return null;
 };
 
 const signIn = async (email, password) => {
   if (!supabase) throw new Error("Connect Supabase in config.js before signing in.");
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
+  if (data.session && !(await hasKompoMembership(data.user.id))) {
+    await supabase.auth.signOut({ scope: "local" });
+    throw new Error("This email is not registered with Kompo Nation. Create a Kompo Nation account with a different email or use the correct store login.");
+  }
   return data;
 };
 
@@ -63,6 +81,7 @@ const signUp = async ({
             ? `${location.origin}/login`
             : undefined,
         data: {
+          app_id: "kompo",
           full_name:
             fullName,
 
