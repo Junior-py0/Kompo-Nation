@@ -24,8 +24,8 @@ function latestStatus(value: unknown): string {
 }
 export function mappedStatus(value: unknown): "shipped" | "delivered" | "cancelled" | null {
   const status = String(value || "").toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
-  if (["delivered", "completed", "delivery_completed"].some((part) => status.includes(part))) return "delivered";
   if (["collected", "collection_completed", "in_transit", "out_for_delivery", "shipped"].some((part) => status.includes(part))) return "shipped";
+  if (status === "completed" || ["delivered", "delivery_completed"].some((part) => status.includes(part))) return "delivered";
   if (["cancelled", "canceled", "failed"].some((part) => status.includes(part))) return "cancelled";
   return null;
 }
