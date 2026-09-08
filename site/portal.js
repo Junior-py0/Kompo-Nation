@@ -11,6 +11,11 @@ const layout = document.querySelector("#portal-layout");
 const content = document.querySelector("#portal-content");
 const state = { session: null, isAdmin: false, vendorIds: [], stores: [], currentVendorId: null, view: "overview" };
 const money = (cents) => new Intl.NumberFormat(CONFIG.locale, { style: "currency", currency: CONFIG.currency }).format(Number(cents || 0) / 100);
+const fulfilmentLabel = (status) => ({
+  shipped: "collected by courier",
+  delivered: "delivered",
+  booked: "courier booked"
+})[status] || String(status || "new").replaceAll("_", " ");
 const customerPriceCents = (baseCents, markupRateBps = 1000) => {
   const base = Math.max(0, Math.round(Number(baseCents) || 0));
   const rate = Math.max(0, Number(markupRateBps) || 0);
@@ -169,7 +174,7 @@ async function renderOverview() {
         `
         : ""
     }<article class="stat-card"><span>Open packages</span><strong>${open}</strong><small>Still moving</small></article><article class="stat-card"><span>${area === "admin" ? "Active stores" : "Products sold"}</span><strong>${area === "admin" ? state.stores.filter((store) => store.status === "active").length : orders.length}</strong><small>Current view</small></article></div>
-    <div class="dashboard-grid"><section class="dashboard-panel"><div class="panel-heading"><h2>Latest movement</h2><button class="table-action" data-open-view="orders">View orders</button></div>${orders.slice(0, 7).map((order) => { const vendor = Array.isArray(order.vendors) ? order.vendors[0] : order.vendors; return `<article class="order-card"><div><strong>${escapeHtml(vendor?.business_name || "Store")}</strong><p>${new Date(order.created_at).toLocaleString(CONFIG.locale)}</p></div><span class="status-pill">${escapeHtml(order.fulfilment_status.replaceAll("_", " "))}</span></article>`; }).join("") || "<p>No paid packages are available yet.</p>"}</section><section class="dashboard-panel"><div class="panel-heading"><h2>Operating rule</h2></div><p>${area === "admin" ? "Operator permission is checked by Supabase RLS on every database request. Opening this page does not bypass the database." : "Online stock must remain separate from stock promised elsewhere. Update it before accepting new sales."}</p></section></div>`;
+    <div class="dashboard-grid"><section class="dashboard-panel"><div class="panel-heading"><h2>Latest movement</h2><button class="table-action" data-open-view="orders">View orders</button></div>${orders.slice(0, 7).map((order) => { const vendor = Array.isArray(order.vendors) ? order.vendors[0] : order.vendors; return `<article class="order-card"><div><strong>${escapeHtml(vendor?.business_name || "Store")}</strong><p>${new Date(order.created_at).toLocaleString(CONFIG.locale)}</p></div><span class="status-pill">${escapeHtml(fulfilmentLabel(order.fulfilment_status))}</span></article>`; }).join("") || "<p>No paid packages are available yet.</p>"}</section><section class="dashboard-panel"><div class="panel-heading"><h2>Operating rule</h2></div><p>${area === "admin" ? "Operator permission is checked by Supabase RLS on every database request. Opening this page does not bypass the database." : "Online stock must remain separate from stock promised elsewhere. Update it before accepting new sales."}</p></section></div>`;
 }
 
 /* ========================================================================== */
@@ -1049,7 +1054,7 @@ async function renderOrders() {
               <span>${new Date(order.created_at).toLocaleString(CONFIG.locale)}</span>
             </div>
             <div class="portal-order-card-actions">
-              <span class="status-pill">${escapeHtml(order.fulfilment_status.replaceAll("_", " "))}</span>
+              <span class="status-pill">${escapeHtml(fulfilmentLabel(order.fulfilment_status))}</span>
               ${action}
             </div>
           </header>
