@@ -58,6 +58,10 @@ const signUp = async ({
       password,
 
       options: {
+        emailRedirectTo:
+          location.protocol === "http:" || location.protocol === "https:"
+            ? `${location.origin}/login`
+            : undefined,
         data: {
           full_name:
             fullName,

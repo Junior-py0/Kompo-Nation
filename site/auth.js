@@ -82,9 +82,9 @@ form.addEventListener("submit", async (event) => {
         termsAcceptedAt
       });
       if (!result.session) {
-        message.textContent = "Check your email to confirm the account, then return here to sign in.";
         setMode("signin");
         form.elements.email.value = values.email;
+        message.textContent = "Check your email to confirm the account, then return here to sign in. If this address already has an account, sign in or reset its password instead.";
         return;
       }
     } else await signIn(values.email.trim().toLowerCase(), values.password);
