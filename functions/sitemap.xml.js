@@ -14,8 +14,10 @@ export async function onRequest() {
         order: "updated_at.desc",
       }),
       allSupabaseRows("products", {
-        select: "id,slug,updated_at",
+        select: "id,slug,updated_at,vendors!inner(status,retired_at)",
         status: "eq.active",
+        "vendors.status": "eq.active",
+        "vendors.retired_at": "is.null",
         order: "updated_at.desc",
       }),
       allSupabaseRows("product_media", {

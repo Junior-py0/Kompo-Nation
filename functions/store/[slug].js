@@ -1,5 +1,7 @@
 import {
   SITE_URL,
+  breadcrumbList,
+  compactDescription,
   escapeHtml,
   storefrontDocument,
   storeAliases,
@@ -36,7 +38,7 @@ export async function onRequest(context) {
   const aliases = storeAliases(store.business_name, store.slug);
   const canonical = `${SITE_URL}/store/${encodeURIComponent(store.slug)}`;
   const aliasCopy = aliases.length ? ` Also known as ${aliases.join(" and ")}.` : "";
-  const description = `${store.short_description || store.description}${aliasCopy} Shop ${store.business_name} clothing and new releases on Kompo Nation.`.slice(0, 300);
+  const description = compactDescription(`${store.short_description || store.description}${aliasCopy} Shop ${store.business_name} clothing and new releases on Kompo Nation.`);
   const itemList = products.map((product, index) => ({
     "@type": "ListItem",
     position: index + 1,
@@ -62,6 +64,11 @@ export async function onRequest(context) {
         url: canonical,
         mainEntity: { "@type": "ItemList", numberOfItems: itemList.length, itemListElement: itemList },
       },
+      breadcrumbList([
+        { name: "Home", url: "/" },
+        { name: "Stores", url: "/stores" },
+        { name: store.business_name, url: canonical },
+      ]),
     ],
   };
   const productLinks = products.length

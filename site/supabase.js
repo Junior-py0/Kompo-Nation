@@ -109,31 +109,7 @@ const signOut = async () => {
   if (supabase) await supabase.auth.signOut();
 };
 
-async function loadRemoteCatalogue() {
-  if (!supabase) return null;
-
-  const [
-    { data: storeRows, error: storeError },
-    { data: productPayload, error: productError },
-    { data: mediaRows, error: mediaError },
-  ] = await Promise.all([
-    supabase
-      .from("vendors")
-      .select("id,slug,business_name,description,short_description,mark,accent,status,sales_count,featured_override,is_platform_owned")
-      .eq("status", "active")
-      .is("retired_at", null),
-    supabase.rpc("get_storefront_products"),
-    supabase
-      .from("product_media")
-      .select("id,product_id,public_url,alt_text,sort_order,created_at")
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true }),
-  ]);
-
-  if (storeError || productError || mediaError) {
-    throw storeError || productError || mediaError;
-  }
-
+function catalogueFromRows(storeRows = [], productPayload = [], mediaRows = []) {
   const productRows = Array.isArray(productPayload) ? productPayload : [];
   const mediaByProduct = new Map();
 
@@ -195,6 +171,7 @@ async function loadRemoteCatalogue() {
         stock: activeVariants.reduce((sum, variant) => sum + variant.stock, 0),
         salesCount: Number(row.sales_count),
         isRare: row.is_rare,
+        isCustomizable: row.is_customizable === true,
         status: row.status,
         sizes: [...new Set(activeVariants.map((variant) => variant.size))],
         colours: [...new Set(activeVariants.map((variant) => variant.colour))],
@@ -205,6 +182,45 @@ async function loadRemoteCatalogue() {
       };
     }).filter((product) => product.variants.some((variant) => variant.active)),
   };
+}
+
+async function loadRemoteCatalogue() {
+  if (!supabase) return null;
+
+  const bootstrap = document.querySelector("#kompo-bootstrap-catalogue");
+  if (bootstrap) {
+    try {
+      const source = bootstrap.content?.textContent || bootstrap.textContent || "";
+      const payload = JSON.parse(source);
+      return catalogueFromRows(payload.stores, payload.products, payload.media);
+    } catch (error) {
+      console.warn("The fast catalogue snapshot could not be read; refreshing it.", error);
+    }
+  }
+
+  const [
+    { data: storeRows, error: storeError },
+    { data: productPayload, error: productError },
+    { data: mediaRows, error: mediaError },
+  ] = await Promise.all([
+    supabase
+      .from("vendors")
+      .select("id,slug,business_name,description,short_description,mark,accent,status,sales_count,featured_override,is_platform_owned")
+      .eq("status", "active")
+      .is("retired_at", null),
+    supabase.rpc("get_storefront_products"),
+    supabase
+      .from("product_media")
+      .select("id,product_id,public_url,alt_text,sort_order,created_at")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (storeError || productError || mediaError) {
+    throw storeError || productError || mediaError;
+  }
+
+  return catalogueFromRows(storeRows, productPayload, mediaRows);
 }
 
 async function loadWishlist(userId) {

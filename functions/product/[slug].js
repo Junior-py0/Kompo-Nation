@@ -1,6 +1,8 @@
 import {
   SITE_URL,
   absoluteUrl,
+  breadcrumbList,
+  compactDescription,
   customerPriceCents,
   escapeHtml,
   storefrontDocument,
@@ -63,7 +65,7 @@ export async function onRequest(context) {
   const aliases = storeAliases(vendor.business_name, vendor.slug);
   const markupRateBps = Number(vendor.commission_rate_bps ?? 1000);
   const aliasCopy = aliases.length ? `, also searched as ${aliases.join(" and ")}` : "";
-  const description = `Shop ${product.name} by ${vendor.business_name}${aliasCopy} on Kompo Nation. ${product.description}`.slice(0, 300);
+  const description = compactDescription(`Shop ${product.name} by ${vendor.business_name}${aliasCopy} on Kompo Nation. ${product.description}`);
   const canonical = `${SITE_URL}/product/${encodeURIComponent(product.slug)}`;
   const offers = variants.map((variant) => ({
     "@type": "Offer",
@@ -76,10 +78,9 @@ export async function onRequest(context) {
     itemCondition: "https://schema.org/NewCondition",
     sku: variant.sku,
     name: `${product.name}, ${variant.size}, ${variant.colour}`,
-    seller: { "@type": "Organization", name: vendor.business_name },
+    seller: { "@type": "Organization", name: vendor.business_name, url: `${SITE_URL}/store/${encodeURIComponent(vendor.slug)}` },
   }));
-  const structuredData = {
-    "@context": "https://schema.org",
+  const productData = {
     "@type": "Product",
     "@id": `${canonical}#product`,
     name: product.name,
@@ -94,6 +95,18 @@ export async function onRequest(context) {
       ...(aliases.length ? { alternateName: aliases } : {}),
     },
     offers,
+  };
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      productData,
+      breadcrumbList([
+        { name: "Home", url: "/" },
+        { name: "Shop", url: "/shop" },
+        { name: vendor.business_name, url: `/store/${encodeURIComponent(vendor.slug)}` },
+        { name: product.name, url: canonical },
+      ]),
+    ],
   };
   const lowestPrice = variants.length
     ? Math.min(...variants.map((item) => customerPriceCents(item.price_cents, markupRateBps)))
@@ -119,6 +132,7 @@ export async function onRequest(context) {
     description,
     canonical,
     image: images[0],
+    imageAlt: media[0]?.alt_text || `${product.name} by ${vendor.business_name}`,
     type: "product",
     structuredData,
     bodyHtml,

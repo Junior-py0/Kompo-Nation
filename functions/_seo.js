@@ -22,6 +22,25 @@ export function absoluteUrl(value = "") {
   catch (_) { return ""; }
 }
 
+export function compactDescription(value = "", maximum = 160) {
+  const text = String(value).replace(/\s+/g, " ").trim();
+  if (text.length <= maximum) return text;
+  const shortened = text.slice(0, maximum - 1).replace(/\s+\S*$/, "").trim();
+  return `${shortened || text.slice(0, maximum - 1).trim()}…`;
+}
+
+export function breadcrumbList(items) {
+  return {
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      item: absoluteUrl(item.url),
+    })),
+  };
+}
+
 export function customerPriceCents(baseCents, markupRateBps = 1000) {
   const base = Math.max(0, Math.round(Number(baseCents) || 0));
   const rate = Math.max(0, Number(markupRateBps) || 0);
@@ -71,6 +90,7 @@ export async function storefrontDocument(context, {
   description,
   canonical,
   image,
+  imageAlt,
   type = "website",
   structuredData,
   bodyHtml,
@@ -83,6 +103,10 @@ export async function storefrontDocument(context, {
   const safeDescription = escapeHtml(description);
   const safeCanonical = escapeHtml(absoluteUrl(canonical));
   const safeImage = escapeHtml(absoluteUrl(image || "/assets/campaign-kompo-apparel-v2.png"));
+  const safeImageAlt = escapeHtml(imageAlt || `${title} on Kompo Nation`);
+  const robots = status >= 400
+    ? "noindex, nofollow"
+    : "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
 
   html = html
     .replace(/<title>[\s\S]*?<\/title>/i, `<title>${safeTitle}</title>`)
@@ -93,8 +117,10 @@ export async function storefrontDocument(context, {
 
   const socialTags = `
   <meta name="description" content="${safeDescription}">
-  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+  <meta name="robots" content="${robots}">
   <link rel="canonical" href="${safeCanonical}">
+  <link rel="alternate" hreflang="en-ZA" href="${safeCanonical}">
+  <link rel="alternate" hreflang="x-default" href="${safeCanonical}">
   <meta property="og:site_name" content="Kompo Nation">
   <meta property="og:locale" content="en_ZA">
   <meta property="og:type" content="${escapeHtml(type)}">
@@ -102,17 +128,19 @@ export async function storefrontDocument(context, {
   <meta property="og:description" content="${safeDescription}">
   <meta property="og:url" content="${safeCanonical}">
   <meta property="og:image" content="${safeImage}">
+  <meta property="og:image:alt" content="${safeImageAlt}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${safeTitle}">
   <meta name="twitter:description" content="${safeDescription}">
   <meta name="twitter:image" content="${safeImage}">
+  <meta name="twitter:image:alt" content="${safeImageAlt}">
   <script id="kompo-structured-data" type="application/ld+json">${jsonLd(structuredData)}</script>`;
   html = html.replace("</head>", `${socialTags}\n</head>`);
 
   if (bodyHtml) {
     html = html.replace(
       /<main id="app" tabindex="-1">[\s\S]*?<\/main>/i,
-      `<main id="app" tabindex="-1">${bodyHtml}</main>`,
+      `<main id="app" tabindex="-1"><div class="seo-server-content">${bodyHtml}</div><section class="app-loading-shell" aria-label="Loading Kompo Nation"><span class="loading-orbit"></span><span>Opening the nation…</span></section></main>`,
     );
   }
 

@@ -118,20 +118,27 @@ function setMeta(title, description, options = {}) {
   const routePath = currentRoute().path;
   const canonicalUrl = `${CONFIG.siteUrl}${routePath === "/" ? "/" : routePath}`;
   const imageUrl = new URL(options.image || "/assets/campaign-kompo-apparel-v2.png", CONFIG.siteUrl).href;
+  const cleanDescription = String(description || "").replace(/\s+/g, " ").trim();
+  const metaDescription = cleanDescription.length > 160
+    ? `${cleanDescription.slice(0, 159).replace(/\s+\S*$/, "").trim()}…`
+    : cleanDescription;
+  const imageAlt = options.imageAlt || `${pageTitle || "Kompo Nation"} on Kompo Nation`;
   const robots = options.robots || "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
   const fullTitle = document.title;
 
-  upsertMeta('meta[name="description"]', { name: "description", content: description });
+  upsertMeta('meta[name="description"]', { name: "description", content: metaDescription });
   upsertMeta('meta[name="robots"]', { name: "robots", content: robots });
   upsertMeta('meta[property="og:title"]', { property: "og:title", content: fullTitle });
-  upsertMeta('meta[property="og:description"]', { property: "og:description", content: description });
+  upsertMeta('meta[property="og:description"]', { property: "og:description", content: metaDescription });
   upsertMeta('meta[property="og:type"]', { property: "og:type", content: options.type || "website" });
   upsertMeta('meta[property="og:url"]', { property: "og:url", content: canonicalUrl });
   upsertMeta('meta[property="og:image"]', { property: "og:image", content: imageUrl });
+  upsertMeta('meta[property="og:image:alt"]', { property: "og:image:alt", content: imageAlt });
   upsertMeta('meta[name="twitter:card"]', { name: "twitter:card", content: "summary_large_image" });
   upsertMeta('meta[name="twitter:title"]', { name: "twitter:title", content: fullTitle });
-  upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: description });
+  upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: metaDescription });
   upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: imageUrl });
+  upsertMeta('meta[name="twitter:image:alt"]', { name: "twitter:image:alt", content: imageAlt });
 
   let canonical = document.querySelector('link[rel="canonical"]');
   if (!canonical) {
@@ -140,6 +147,17 @@ function setMeta(title, description, options = {}) {
     document.head.append(canonical);
   }
   canonical.href = canonicalUrl;
+
+  ["en-ZA", "x-default"].forEach((language) => {
+    let alternate = document.querySelector(`link[rel="alternate"][hreflang="${language}"]`);
+    if (!alternate) {
+      alternate = document.createElement("link");
+      alternate.rel = "alternate";
+      alternate.hreflang = language;
+      document.head.append(alternate);
+    }
+    alternate.href = canonicalUrl;
+  });
 }
 
 function setStructuredData(data) {
@@ -163,8 +181,7 @@ function storeSearchAliases(store) {
 function productStructuredData(product, store) {
   const canonical = `${CONFIG.siteUrl}/product/${encodeURIComponent(product.slug)}`;
   const aliases = storeSearchAliases(store);
-  return {
-    "@context": "https://schema.org",
+  const productData = {
     "@type": "Product",
     "@id": `${canonical}#product`,
     name: product.name,
@@ -186,8 +203,22 @@ function productStructuredData(product, store) {
       availability: Number(variant.stock) > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
       itemCondition: "https://schema.org/NewCondition",
       sku: variant.sku,
-      seller: { "@type": "Organization", name: store?.name || "Kompo Nation" },
+      seller: { "@type": "Organization", name: store?.name || "Kompo Nation", url: store ? `${CONFIG.siteUrl}/store/${encodeURIComponent(store.slug)}` : CONFIG.siteUrl },
     })),
+  };
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      productData,
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          ["Home", "/"],
+          ["Shop", "/shop"],
+          [product.name, `/product/${encodeURIComponent(product.slug)}`],
+        ].map(([name, url], index) => ({ "@type": "ListItem", position: index + 1, name, item: `${CONFIG.siteUrl}${url}` })),
+      },
+    ],
   };
 }
 
@@ -266,12 +297,12 @@ function productImages(product) {
 
 function productBadges(product) {
   return `<div class="product-badges">
-    ${product.isRare ? "<span>LIMITED</span>" : "<span>IN THE MOVEMENT</span>"}
+    ${product.isCustomizable ? '<span class="custom-product-badge">PERSONALISED</span>' : product.isRare ? "<span>LIMITED</span>" : "<span>IN THE MOVEMENT</span>"}
     <span>${product.stock} LEFT</span>
   </div>`;
 }
 
-function productVisual(product) {
+function productVisual(product, cardIndex = Number.POSITIVE_INFINITY) {
   const images = productImages(product);
   const media = images.length
     ? `<div class="product-media-slides">
@@ -280,7 +311,8 @@ function productVisual(product) {
           data-product-slide
           src="${escapeHtml(image.url)}"
           alt="${escapeHtml(image.alt || product.name)}"
-          loading="lazy"
+          loading="${cardIndex < 4 && index === 0 ? "eager" : "lazy"}"
+          ${cardIndex < 4 && index === 0 ? 'fetchpriority="high"' : ""}
           decoding="async"
           draggable="false"
           aria-hidden="${index === 0 ? "false" : "true"}"
@@ -290,9 +322,9 @@ function productVisual(product) {
 
   return `
     <div
-      class="product-visual"
+      class="product-visual ${product.isCustomizable ? "is-customizable" : ""}"
       style="--product-tone:${tone(product.tone)}"
-      ${images.length > 1 ? `data-product-carousel data-next-rotation="${Date.now() + 2600}" aria-label="${escapeHtml(product.name)} · ${images.length} photos"` : ""}
+      ${images.length > 1 ? `data-product-carousel aria-label="${escapeHtml(product.name)} · ${images.length} photos"` : ""}
     >
       ${media}
       ${productBadges(product)}
@@ -351,11 +383,10 @@ function setupProductCardRotation() {
 
   window.setInterval(() => {
     if (document.hidden) return;
-    const now = Date.now();
 
-    document.querySelectorAll("[data-product-carousel]").forEach((carousel, cardIndex) => {
+    document.querySelectorAll("[data-product-carousel]").forEach((carousel) => {
       const slides = [...carousel.querySelectorAll("[data-product-slide]")];
-      if (slides.length < 2 || now < Number(carousel.dataset.nextRotation || 0)) return;
+      if (slides.length < 2) return;
 
       const bounds = carousel.getBoundingClientRect();
       const isVisible = bounds.bottom > 0 && bounds.top < window.innerHeight && bounds.right > 0 && bounds.left < window.innerWidth;
@@ -364,15 +395,15 @@ function setupProductCardRotation() {
 
       const current = Math.max(0, slides.findIndex((slide) => slide.classList.contains("is-active")));
       const next = (current + 1) % slides.length;
+      if (!slides[next].complete || !slides[next].naturalWidth) return;
       slides[current].classList.remove("is-active");
       slides[current].setAttribute("aria-hidden", "true");
       slides[next].classList.add("is-active");
       slides[next].setAttribute("aria-hidden", "false");
       const count = carousel.querySelector("[data-product-count]");
       if (count) count.textContent = `${next + 1} / ${slides.length}`;
-      carousel.dataset.nextRotation = String(now + 3800 + (cardIndex % 3) * 220);
     });
-  }, 700);
+  }, 4800);
 }
 
 function setupProductGallery(product) {
@@ -424,21 +455,23 @@ function setupProductGallery(product) {
   });
 }
 
-function productCard(product) {
+function productCard(product, cardIndex) {
   const store = storeFor(product);
 
   return `
-    <article class="product-card reveal">
+    <article class="product-card ${product.isCustomizable ? "is-customizable" : ""} reveal">
       <a href="/product/${encodeURIComponent(product.slug)}">
-        ${productVisual(product)}
+        ${productVisual(product, cardIndex)}
       </a>
 
       <div class="product-info">
-        <small>
+        <small class="product-card-meta">
           ${escapeHtml(store?.name || "Kompo Nation")}
           ·
           ${escapeHtml(product.category)}
         </small>
+
+        ${product.isCustomizable ? '<span class="personalization-caption">Bespoke embroidery available</span>' : ""}
 
         <div class="product-title-row">
           <h3>
@@ -905,7 +938,7 @@ function renderProduct() {
   setMeta(
     `${product.name} by ${store?.name || "Kompo Nation"}`,
     `Shop ${product.name} by ${store?.name || "Kompo Nation"}${aliases.length ? `, also searched as ${aliases.join(" and ")}` : ""}. ${product.description}`,
-    { image: productImages(product)[0]?.url, type: "product" }
+    { image: productImages(product)[0]?.url, imageAlt: productImages(product)[0]?.alt || `${product.name} by ${store?.name || "Kompo Nation"}`, type: "product" }
   );
   setStructuredData(productStructuredData(product, store));
   const variants = productVariants(product);
@@ -935,6 +968,11 @@ function renderProduct() {
       <p class="product-detail-price" id="variant-price">${money(product.priceCents)}</p>
       <p>${escapeHtml(product.description)}</p>
 
+      ${product.isCustomizable ? `<div class="custom-product-intro">
+        <span class="custom-thread-mark" aria-hidden="true">✦</span>
+        <div><strong>Made personal</strong><small>This piece can be embroidered with your chosen name.</small></div>
+      </div>` : ""}
+
       <form id="product-form">
         <div class="option-group">
           <span>SIZE</span>
@@ -962,6 +1000,12 @@ function renderProduct() {
           <span>COLOUR</span>
           <div class="option-list" id="variant-colours"></div>
         </div>
+
+        ${product.isCustomizable ? `<label class="customization-field">
+          <span>NAME TO EMBROIDER</span>
+          <input name="customization" maxlength="30" autocomplete="off" placeholder="Enter a name" required>
+          <small>Up to 30 characters. We’ll embroider it exactly as entered.</small>
+        </label>` : ""}
 
         <div class="detail-actions">
           <button class="primary-button" id="variant-add-button" type="submit">
@@ -1045,13 +1089,20 @@ function renderProduct() {
 
     const size = form.elements.size?.value;
     const colour = form.elements.colour?.value;
+    const customizationText = String(form.elements.customization?.value || "").trim();
 
     if (!size || !colour) {
       showToast("Choose an available size and colour.");
       return;
     }
 
-    addToCart(product.id, size, colour);
+    if (product.isCustomizable && !customizationText) {
+      form.elements.customization.focus();
+      showToast("Enter the name you want embroidered.");
+      return;
+    }
+
+    addToCart(product.id, size, colour, customizationText);
   });
 
   drawColours();
@@ -1217,7 +1268,7 @@ function renderInformation(type) {
 /* 04. CART AND CHECKOUT                                                      */
 /* ========================================================================== */
 
-function addToCart(productId, size, colour) {
+function addToCart(productId, size, colour, customizationText = "") {
   const product = state.products.find((item) => item.id === productId);
 
   if (!product) {
@@ -1236,21 +1287,32 @@ function addToCart(productId, size, colour) {
     return;
   }
 
+  const customization = product.isCustomizable
+    ? String(customizationText || "").trim().slice(0, 30)
+    : "";
+
+  if (product.isCustomizable && !customization) {
+    showToast("Enter the name you want embroidered.");
+    return;
+  }
+
   const existing = state.cart.find(
     (line) =>
       line.productId === productId &&
       line.size === variant.size &&
-      line.colour === variant.colour
+      line.colour === variant.colour &&
+      String(line.customizationText || "") === customization
   );
+  const variantQuantityInBag = state.cart
+    .filter((line) => line.productId === productId && line.size === variant.size && line.colour === variant.colour)
+    .reduce((sum, line) => sum + Number(line.quantity), 0);
+
+  if (variantQuantityInBag >= Number(variant.stock)) {
+    showToast(`Only ${variant.stock} of this option ${Number(variant.stock) === 1 ? "is" : "are"} available.`);
+    return;
+  }
 
   if (existing) {
-    if (existing.quantity >= Number(variant.stock)) {
-      showToast(
-        `Only ${variant.stock} of this option ${Number(variant.stock) === 1 ? "is" : "are"} available.`
-      );
-      return;
-    }
-
     existing.quantity += 1;
   } else {
     state.cart.push({
@@ -1259,6 +1321,7 @@ function addToCart(productId, size, colour) {
       quantity: 1,
       size: variant.size,
       colour: variant.colour,
+      customizationText: customization,
     });
   }
 
@@ -1296,6 +1359,12 @@ function cartRows() {
     .filter(Boolean);
 }
 
+function variantQuantityInCart(productId, size, colour) {
+  return state.cart
+    .filter((line) => line.productId === productId && line.size === size && line.colour === colour)
+    .reduce((sum, line) => sum + Number(line.quantity), 0);
+}
+
 function renderCart() {
   const rows = cartRows();
 
@@ -1319,7 +1388,7 @@ function renderCart() {
       <p class="eyebrow">YOUR BAG</p>
       <h1>${rows.reduce((sum, line) => sum + line.quantity, 0)} pieces.</h1>
 
-      ${rows.map((line) => `<article class="cart-line">
+      ${rows.map((line, lineIndex) => `<article class="cart-line ${line.customizationText ? "is-customized" : ""}">
         <div class="cart-thumb">
           ${
             line.product.imageUrl
@@ -1338,23 +1407,25 @@ function renderCart() {
 
           <small>${line.variant.stock} currently available</small>
 
+          ${line.customizationText ? `<div class="cart-customization"><span>Embroidered name</span><strong>${escapeHtml(line.customizationText)}</strong></div>` : ""}
+
           <div class="line-controls">
             <button
               data-quantity="-1"
-              data-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
+              data-line-index="${lineIndex}"
             >−</button>
 
             <span>${line.quantity}</span>
 
             <button
               data-quantity="1"
-              data-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
-              ${line.quantity >= Number(line.variant.stock) ? "disabled" : ""}
+              data-line-index="${lineIndex}"
+              ${variantQuantityInCart(line.productId, line.size, line.colour) >= Number(line.variant.stock) ? "disabled" : ""}
             >+</button>
 
             <button
               class="remove-line"
-              data-remove-line="${escapeHtml(line.productId)}|${escapeHtml(line.size)}|${escapeHtml(line.colour)}"
+              data-remove-line-index="${lineIndex}"
             >Remove</button>
           </div>
         </div>
@@ -1403,8 +1474,9 @@ const checkoutLines = () => state.cart.map(({
   productId,
   quantity,
   size,
-  colour
-}) => ({ productId, quantity, size, colour }));
+  colour,
+  customizationText
+}) => ({ productId, quantity, size, colour, customizationText: String(customizationText || "") }));
 
 function syncDiscountSummary(subtotal) {
   const discount = state.appliedDiscount;
@@ -1749,6 +1821,7 @@ async function renderCheckout() {
                     ${line.quantity}
                     ×
                     ${escapeHtml(line.product.name)}
+                    ${line.customizationText ? `<small class="summary-customization">“${escapeHtml(line.customizationText)}” embroidery</small>` : ""}
                   </span>
 
                   <strong>
@@ -2233,6 +2306,7 @@ async function beginCheckout(event) {
                   ${escapeHtml(
                     line.product.name
                   )}
+                  ${line.customizationText ? `<small class="summary-customization">“${escapeHtml(line.customizationText)}” embroidery</small>` : ""}
                 </span>
 
                 <strong>
@@ -2671,7 +2745,7 @@ async function renderAccountView(
       await supabase
         .from("vendor_orders")
         .select(
-          "id,public_reference,fulfilment_status,merchandise_total_cents,shipping_charge_cents,created_at,orders!inner(customer_id),vendors(business_name)"
+          "id,public_reference,fulfilment_status,merchandise_total_cents,shipping_charge_cents,created_at,orders!inner(customer_id),vendors(business_name),order_items(product_name,customization_text,quantity)"
         )
         .eq(
           "orders.customer_id",
@@ -2733,6 +2807,10 @@ async function renderAccountView(
                         )
                       }
                     </p>
+
+                    ${order.order_items?.some((item) => item.customization_text) ? `<div class="account-customizations">
+                      ${order.order_items.filter((item) => item.customization_text).map((item) => `<span><small>${escapeHtml(item.product_name)}${Number(item.quantity) > 1 ? ` × ${Number(item.quantity)}` : ""}</small><strong>${escapeHtml(item.customization_text)}</strong></span>`).join("")}
+                    </div>` : ""}
 
                     ${
                       canCancel
@@ -3482,15 +3560,11 @@ async function toggleWishlist(productId) {
     });
 }
 
-function changeLine(key, delta) {
-  const [productId, size, colour] = key.split("|");
-
-  const line = state.cart.find(
-    (item) =>
-      item.productId === productId &&
-      item.size === size &&
-      item.colour === colour
-  );
+function changeLine(lineIndex, delta) {
+  const line = state.cart[Number(lineIndex)];
+  const productId = line?.productId;
+  const size = line?.size;
+  const colour = line?.colour;
 
   const product = state.products.find(
     (item) => item.id === productId
@@ -3502,7 +3576,11 @@ function changeLine(key, delta) {
 
   if (!line || !variant) return;
 
-  if (delta > 0 && line.quantity >= Number(variant.stock)) {
+  const variantQuantityInBag = state.cart
+    .filter((item) => item.productId === productId && item.size === size && item.colour === colour)
+    .reduce((sum, item) => sum + Number(item.quantity), 0);
+
+  if (delta > 0 && variantQuantityInBag >= Number(variant.stock)) {
     showToast(
       `Only ${variant.stock} of this option ${Number(variant.stock) === 1 ? "is" : "are"} available.`
     );
@@ -3511,7 +3589,7 @@ function changeLine(key, delta) {
 
   line.quantity = Math.max(
     1,
-    Math.min(Number(variant.stock), line.quantity + delta)
+    line.quantity + delta
   );
 
   saveCommerceState();
@@ -3710,7 +3788,7 @@ function setupDelegatedEvents() {
 
       if (quantity) {
         changeLine(
-          quantity.dataset.line,
+          quantity.dataset.lineIndex,
           Number(
             quantity.dataset.quantity
           )
@@ -3721,27 +3799,11 @@ function setupDelegatedEvents() {
 
       const remove =
         event.target.closest(
-          "[data-remove-line]"
+          "[data-remove-line-index]"
         );
 
       if (remove) {
-        const [
-          productId,
-          size,
-          colour
-        ] =
-          remove.dataset.removeLine
-            .split("|");
-
-        state.cart =
-          state.cart.filter(
-            (line) =>
-              !(
-                line.productId === productId &&
-                line.size === size &&
-                line.colour === colour
-              )
-          );
+        state.cart.splice(Number(remove.dataset.removeLineIndex), 1);
 
         saveCommerceState();
 
@@ -4903,8 +4965,23 @@ async function start() {
 
   updateCounts();
 
-  state.session =
-    await getSession();
+  const cataloguePromise = isSupabaseConfigured()
+    ? loadRemoteCatalogue().catch((error) => {
+        console.warn("Remote catalogue is unavailable; retained catalogue is being shown.", error);
+        return null;
+      })
+    : Promise.resolve(null);
+
+  const sessionPromise = getSession().catch((error) => {
+    console.warn("Account status could not be loaded", error);
+    return null;
+  });
+  const sessionRequired = ["/cart", "/checkout", "/wishlist", "/account", "/payment-success", "/payment-cancelled"]
+    .includes(currentRoute().path);
+
+  state.session = sessionRequired ? await sessionPromise : null;
+
+  let wishlistPromise = Promise.resolve(null);
 
   if (state.session) {
     document
@@ -4912,20 +4989,12 @@ async function start() {
       .textContent =
         "Account";
 
-    try {
-      state.wishlist =
-        await loadWishlist(
-          state.session.user.id
-        );
+    wishlistPromise = loadWishlist(state.session.user.id).catch((error) => {
+      console.warn("Wishlist could not be loaded", error);
+      return null;
+    });
 
-    } catch (error) {
-      console.warn(
-        "Wishlist could not be loaded",
-        error
-      );
-    }
-
-  } else {
+  } else if (sessionRequired) {
     document
       .querySelector("#account-link")
       .textContent =
@@ -4933,39 +5002,28 @@ async function start() {
   }
 
   if (isSupabaseConfigured()) {
-    try {
-      const catalogue =
-        await loadRemoteCatalogue();
+    const catalogue = await cataloguePromise;
 
-      if (catalogue?.stores.length) {
-        state.stores =
-          catalogue.stores;
-      }
+    if (catalogue?.stores.length) {
+      state.stores = catalogue.stores;
+    }
 
-      if (Array.isArray(catalogue?.products)) {
-        state.products =
-          catalogue.products;
+    if (Array.isArray(catalogue?.products)) {
+      state.products = catalogue.products;
 
-        const liveProductIds = new Set(
-          state.products.map((product) => product.id)
-        );
-
-        state.cart = state.cart.filter(
-          (line) => liveProductIds.has(line.productId)
-        );
-
-        state.wishlist = state.wishlist.filter(
-          (productId) => liveProductIds.has(productId)
-        );
-
-        saveCommerceState();
-      }
-
-    } catch (error) {
-      console.warn(
-        "Remote catalogue is unavailable; retained catalogue is being shown.",
-        error
+      const liveProductIds = new Set(
+        state.products.map((product) => product.id)
       );
+
+      state.cart = state.cart.filter(
+        (line) => liveProductIds.has(line.productId)
+      );
+
+      state.wishlist = state.wishlist.filter(
+        (productId) => liveProductIds.has(productId)
+      );
+
+      saveCommerceState();
     }
   }
 
@@ -4997,6 +5055,30 @@ async function start() {
   }
 
   await renderRoute();
+
+  if (!sessionRequired) {
+    state.session = await sessionPromise;
+    document.querySelector("#account-link").textContent = state.session ? "Account" : "Sign in";
+    if (state.session) {
+      wishlistPromise = loadWishlist(state.session.user.id).catch((error) => {
+        console.warn("Wishlist could not be loaded", error);
+        return null;
+      });
+    }
+  }
+
+  const remoteWishlist = await wishlistPromise;
+  if (Array.isArray(remoteWishlist)) {
+    const liveProductIds = new Set(state.products.map((product) => product.id));
+    state.wishlist = remoteWishlist.filter((productId) => liveProductIds.has(productId));
+    localStorage.setItem("kompo-wishlist", JSON.stringify(state.wishlist));
+    updateCounts();
+    document.querySelectorAll("[data-wish]").forEach((button) => {
+      const active = state.wishlist.includes(button.dataset.wish);
+      button.classList.toggle("active", active);
+      button.textContent = active ? "Saved" : "♡";
+    });
+  }
 }
 
 start().catch((error) => {

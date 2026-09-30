@@ -602,20 +602,39 @@ function weightToKg(value, unit, allowZero = false) {
   return unit === "g" ? number / 1000 : number;
 }
 
-async function uploadProductImages(productId, vendorId, files, altText = "") {
+const PRODUCT_IMAGE_FORMATS = new Map([
+  ["jpg", "image/jpeg"],
+  ["jpeg", "image/jpeg"],
+  ["png", "image/png"],
+  ["webp", "image/webp"],
+]);
+
+function productImageDetails(file) {
+  const extension = (file.name.split(".").pop() || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const contentType = PRODUCT_IMAGE_FORMATS.get(extension);
+  if (!contentType || (file.type && file.type !== contentType)) {
+    throw new Error(`${file.name} is not a supported photo. Use JPG, PNG or WebP.`);
+  }
+  if (!file.size) throw new Error(`${file.name} is empty. Choose the photo again.`);
+  if (file.size > 5 * 1024 * 1024) throw new Error(`${file.name} is larger than 5 MB.`);
+  return { extension: extension === "jpeg" ? "jpg" : extension, contentType };
+}
+
+async function uploadProductImages(productId, vendorId, files, altText = "", onProgress = () => {}) {
   const items = [...(files || [])];
   if (!items.length) return;
+  const validatedItems = items.map((file) => ({ file, ...productImageDetails(file) }));
   const { data: existing, error: existingError } = await supabase.from("product_media").select("sort_order").eq("product_id", productId).order("sort_order", { ascending: false }).limit(1);
   if (existingError) throw existingError;
   let sortOrder = Number(existing?.[0]?.sort_order ?? -1) + 1;
 
-  for (const file of items) {
-    if (!file.type.startsWith("image/")) throw new Error(`${file.name} is not an image.`);
-    if (file.size > 5 * 1024 * 1024) throw new Error(`${file.name} is larger than 5 MB.`);
-    const ext = (file.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase() || "jpg";
-    const path = `${vendorId}/${productId}/${crypto.randomUUID()}.${ext}`;
-    const { error: uploadError } = await supabase.storage.from("product-images").upload(path, file, { contentType: file.type, upsert: false });
-    if (uploadError) throw uploadError;
+  for (let index = 0; index < validatedItems.length; index += 1) {
+    const { file, extension, contentType } = validatedItems[index];
+    onProgress({ current: index + 1, total: validatedItems.length, fileName: file.name, complete: false });
+    const uniqueName = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const path = `${vendorId}/${productId}/${uniqueName}.${extension}`;
+    const { error: uploadError } = await supabase.storage.from("product-images").upload(path, file, { contentType, upsert: false });
+    if (uploadError) throw new Error(`Could not upload ${file.name}: ${uploadError.message}`);
     const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(path);
     const { error: mediaError } = await supabase.from("product_media").insert({
       product_id: productId,
@@ -626,14 +645,15 @@ async function uploadProductImages(productId, vendorId, files, altText = "") {
     });
     if (mediaError) {
       await supabase.storage.from("product-images").remove([path]);
-      throw mediaError;
+      throw new Error(`The photo uploaded but could not be attached to the product: ${mediaError.message}`);
     }
+    onProgress({ current: index + 1, total: validatedItems.length, fileName: file.name, complete: true });
   }
 }
 
 async function renderProducts() {
   const query = supabase.from("products")
-    .select("id,vendor_id,name,slug,category,status,sales_count,is_rare,description,vendors(business_name),product_media(id,storage_path,public_url,alt_text,sort_order),product_variants(id,sku,size,colour,price_cents,stock_quantity,weight_kg,length_cm,width_cm,height_cm,active)")
+    .select("id,vendor_id,name,slug,category,status,sales_count,is_rare,is_customizable,description,vendors(business_name),product_media(id,storage_path,public_url,alt_text,sort_order),product_variants(id,sku,size,colour,price_cents,stock_quantity,weight_kg,length_cm,width_cm,height_cm,active)")
     .order("created_at", { ascending: false });
 
   const { data: products, error } = area === "vendor" ? await query.eq("vendor_id", state.currentVendorId) : await query;
@@ -658,7 +678,7 @@ async function renderProducts() {
         <div>
           <p class="eyebrow">${escapeHtml(vendor?.business_name || "STORE")}</p>
           <h2>${escapeHtml(product.name)}</h2>
-          <p>${escapeHtml(product.category)} · ${money(minBasePrice)} vendor base · ${money(minCustomerPrice)} customer price · ${totalStock} online</p>
+          <p>${escapeHtml(product.category)} · ${money(minBasePrice)} vendor base · ${money(minCustomerPrice)} customer price · ${totalStock} online${product.is_customizable ? " · Custom embroidery" : ""}</p>
         </div>
         <div class="terminal-actions">
           <span class="status-pill">${escapeHtml(product.status)}</span>
@@ -687,6 +707,7 @@ async function renderProducts() {
               </div>
               <small class="field-help">Enter the weight of one item. Package dimensions are managed once under Store settings.</small>
               <label class="product-rare-toggle"><input type="checkbox" data-product-rare="${product.id}" ${product.is_rare ? "checked" : ""}><span>Limited / rare item</span></label>
+              <label class="product-custom-toggle"><input type="checkbox" data-product-customizable="${product.id}" ${product.is_customizable ? "checked" : ""}><span><strong>Custom embroidery</strong><small>Buyers must enter the name to embroider before adding this product to their bag.</small></span></label>
               <button class="primary-button" type="button" data-save-product="${product.id}">Save product details</button>
             </div>
           </section>
@@ -700,9 +721,11 @@ async function renderProducts() {
               </figure>`).join("") || '<p class="muted-copy">No photos yet.</p>'}
             </div>
             <div class="stack-form compact-form product-photo-upload">
-              <label>Add photos<input type="file" accept="image/*" multiple data-image-files="${product.id}"></label>
+              <label>Add photos<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple data-image-files="${product.id}"></label>
+              <small class="field-help">JPG, PNG or WebP · up to 5 MB per photo.</small>
               <label>Photo description<input data-image-alt="${product.id}" placeholder="Black hoodie front view"></label>
-              <button class="table-action" type="button" data-upload-product-images="${product.id}" data-vendor-id="${product.vendor_id}">Upload photos</button>
+              <button class="table-action product-photo-upload-button" type="button" data-upload-product-images="${product.id}" data-vendor-id="${product.vendor_id}">Upload selected photos</button>
+              <p class="form-message product-upload-message" data-image-message="${product.id}" role="status" aria-live="polite"></p>
             </div>
           </section>
         </div>
@@ -769,8 +792,9 @@ async function renderProducts() {
         <div class="form-grid">
           <label>Status<select name="status"><option value="draft">Draft</option><option value="active">Active</option></select></label>
           <label class="product-rare-toggle"><input name="is_rare" type="checkbox"><span>Limited / rare item</span></label>
+          <label class="product-custom-toggle"><input name="is_customizable" type="checkbox"><span><strong>Custom embroidery</strong><small>Require each buyer to enter the name that will be embroidered on this item.</small></span></label>
         </div>
-        <label>Product photos<input name="images" type="file" accept="image/*" multiple></label>
+        <label>Product photos<input name="images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple><small class="field-help">JPG, PNG or WebP · up to 5 MB per photo.</small></label>
         <button class="primary-button">Create product</button><p class="form-message"></p>
       </form>
     </section>
@@ -887,7 +911,7 @@ async function createProduct(form) {
   if (!colours.length) throw new Error("Add at least one colour.");
   const weightKg = weightToKg(values.item_weight, values.weight_unit);
 
-  const { data: productId, error } = await supabase.rpc("save_product_v2", {
+  const { data: productId, error } = await supabase.rpc("save_product_v3", {
     p_vendor_id: values.vendor_id,
     p_name: values.name.trim(),
     p_category: values.category.trim(),
@@ -901,6 +925,7 @@ async function createProduct(form) {
     p_width_cm: 1,
     p_height_cm: 1,
     p_is_rare: values.is_rare === "on",
+    p_is_customizable: values.is_customizable === "on",
     p_status: values.status,
   });
   if (error) throw error;
@@ -957,6 +982,7 @@ function renderOrderItems(items) {
           <div class="portal-order-item-options">
             <span><small>Colour</small>${escapeHtml(details.colour)}</span>
             <span><small>Size</small>${escapeHtml(details.size)}</span>
+            ${item.customization_text ? `<span class="portal-order-customization"><small>Embroider exactly</small>${escapeHtml(item.customization_text)}</span>` : ""}
           </div>
         </div>
         <div class="portal-order-item-quantity">
@@ -974,7 +1000,7 @@ async function renderOrders() {
   const query = supabase
     .from("vendor_orders")
     .select(
-      "id,public_reference,vendor_id,fulfilment_status,merchandise_subtotal_cents,merchandise_total_cents,discount_total_cents,discount_code,shipping_charge_cents,shipping_quote,commission_total_cents,vendor_net_cents,created_at,orders(customer_name,customer_email),vendors(business_name),order_items(id,product_name,variant_description,sku,unit_price_cents,quantity,line_total_cents,product_variants(size,colour),products(product_media(public_url,alt_text,sort_order)))"
+      "id,public_reference,vendor_id,fulfilment_status,merchandise_subtotal_cents,merchandise_total_cents,discount_total_cents,discount_code,shipping_charge_cents,shipping_quote,commission_total_cents,vendor_net_cents,created_at,orders(customer_name,customer_email),vendors(business_name),order_items(id,product_name,variant_description,customization_text,sku,unit_price_cents,quantity,line_total_cents,product_variants(size,colour),products(product_media(public_url,alt_text,sort_order)))"
     )
     .order("created_at", {
       ascending: false
@@ -1963,12 +1989,13 @@ const manageProduct = event.target.closest("[data-manage-product]");
       document.querySelector(`[data-product-weight="${CSS.escape(id)}"]`).value,
       document.querySelector(`[data-product-weight-unit="${CSS.escape(id)}"]`).value
     );
-    const { error } = await supabase.rpc("update_product_details", {
+    const { error } = await supabase.rpc("update_product_details_v2", {
       p_product_id: id,
       p_name: document.querySelector(`[data-product-name="${CSS.escape(id)}"]`).value,
       p_category: document.querySelector(`[data-product-category="${CSS.escape(id)}"]`).value,
       p_description: document.querySelector(`[data-product-description="${CSS.escape(id)}"]`).value,
       p_is_rare: document.querySelector(`[data-product-rare="${CSS.escape(id)}"]`).checked,
+      p_is_customizable: document.querySelector(`[data-product-customizable="${CSS.escape(id)}"]`).checked,
       p_status: document.querySelector(`[data-product-status="${CSS.escape(id)}"]`).value,
     });
     if (error) return toast(error.message);
@@ -2024,14 +2051,47 @@ const manageProduct = event.target.closest("[data-manage-product]");
 
   const uploadImages = event.target.closest("[data-upload-product-images]");
   if (uploadImages) {
+    event.preventDefault();
     const id = uploadImages.dataset.uploadProductImages;
-    const files = document.querySelector(`[data-image-files="${CSS.escape(id)}"]`).files;
-    if (!files.length) return toast("Choose at least one image.");
+    const fileInput = document.querySelector(`[data-image-files="${CSS.escape(id)}"]`);
+    const message = document.querySelector(`[data-image-message="${CSS.escape(id)}"]`);
+    const files = [...(fileInput?.files || [])];
+    if (!files.length) {
+      if (message) message.textContent = "Choose at least one photo first.";
+      return toast("Choose at least one photo first.");
+    }
+    const originalLabel = uploadImages.textContent;
+    uploadImages.disabled = true;
+    uploadImages.setAttribute("aria-busy", "true");
     try {
-      await uploadProductImages(id, uploadImages.dataset.vendorId, files, document.querySelector(`[data-image-alt="${CSS.escape(id)}"]`).value);
-      toast("Photos uploaded.");
-      return renderProducts();
-    } catch (error) { return toast(error.message); }
+      await uploadProductImages(
+        id,
+        uploadImages.dataset.vendorId,
+        files,
+        document.querySelector(`[data-image-alt="${CSS.escape(id)}"]`).value,
+        ({ current, total, fileName, complete }) => {
+          uploadImages.textContent = complete && current === total ? "Finishing…" : `Uploading ${current} of ${total}…`;
+          if (message) message.textContent = complete
+            ? `${current} of ${total} uploaded.`
+            : `Uploading ${fileName}…`;
+        }
+      );
+      if (message) message.textContent = `${files.length} photo${files.length === 1 ? "" : "s"} uploaded successfully.`;
+      fileInput.value = "";
+      toast(`${files.length} photo${files.length === 1 ? "" : "s"} uploaded.`);
+      await renderProducts();
+      return;
+    } catch (error) {
+      const errorMessage = error?.message || "The photos could not be uploaded. Please try again.";
+      if (message) message.textContent = errorMessage;
+      return toast(errorMessage);
+    } finally {
+      if (uploadImages.isConnected) {
+        uploadImages.disabled = false;
+        uploadImages.removeAttribute("aria-busy");
+        uploadImages.textContent = originalLabel;
+      }
+    }
   }
 
   const deleteMedia = event.target.closest("[data-delete-media]");

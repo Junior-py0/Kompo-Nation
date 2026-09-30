@@ -1,4 +1,4 @@
-import { SITE_URL, escapeHtml, storefrontDocument, supabaseRows } from "./_seo.js";
+import { SITE_URL, breadcrumbList, escapeHtml, storefrontDocument, supabaseRows } from "./_seo.js";
 
 const PAGE_COPY = {
   "/": [
@@ -45,6 +45,13 @@ function resolvedPath(value) {
 }
 
 export async function onRequest(context) {
+  const requestUrl = new URL(context.request.url);
+  const cleanPath = requestUrl.pathname.length > 1
+    ? requestUrl.pathname.replace(/\/+$/, "")
+    : "/";
+  if (requestUrl.hostname === "www.komponation.co.za" || cleanPath !== requestUrl.pathname) {
+    return Response.redirect(`${SITE_URL}${cleanPath}${requestUrl.search}`, 301);
+  }
   const path = resolvedPath(context.params.path);
   const page = PAGE_COPY[path];
   if (!page) return context.next();
@@ -53,24 +60,32 @@ export async function onRequest(context) {
   let bodyHtml;
   let structuredData = {
     "@context": "https://schema.org",
-    "@type": path === "/about" ? "AboutPage" : "WebPage",
-    name: title.replace(/ \| Kompo Nation.*$/, ""),
-    description,
-    url: `${SITE_URL}${path === "/" ? "/" : path}`,
+    "@graph": [
+      {
+        "@type": path === "/about" ? "AboutPage" : "WebPage",
+        name: title.replace(/ \| Kompo Nation.*$/, ""),
+        description,
+        url: `${SITE_URL}${path === "/" ? "/" : path}`,
+      },
+      ...(path === "/" ? [] : [breadcrumbList([
+        { name: "Home", url: "/" },
+        { name: title.split(" | ")[0], url: path },
+      ])]),
+    ],
   };
 
   if (["/", "/shop", "/stores"].includes(path)) {
-    const [stores, products] = await Promise.all([
+    const [stores, products, media] = await Promise.all([
       supabaseRows("vendors", {
-        select: "id,slug,business_name,short_description,updated_at",
+        select: "id,slug,business_name,description,short_description,mark,accent,status,sales_count,featured_override,is_platform_owned,updated_at",
         status: "eq.active",
         retired_at: "is.null",
         order: "business_name.asc",
       }),
-      supabaseRows("products", {
-        select: "id,vendor_id,slug,name,description,category,updated_at",
-        status: "eq.active",
-        order: "updated_at.desc",
+      supabaseRows("rpc/get_storefront_products"),
+      supabaseRows("product_media", {
+        select: "id,product_id,public_url,alt_text,sort_order,created_at",
+        order: "sort_order.asc,created_at.asc",
       }),
     ]);
     const vendorNames = new Map(stores.map((store) => [store.id, store.business_name]));
@@ -84,25 +99,23 @@ export async function onRequest(context) {
       "@graph": [
         { "@type": "Organization", "@id": `${SITE_URL}/#organization`, name: "Kompo Nation", url: `${SITE_URL}/`, logo: `${SITE_URL}/assets/kompo-nation-logo-transparent-v2.png`, email: "mailto:ramashilokgotsofatso@gmail.com", telephone: "+27727718727", contactPoint: { "@type": "ContactPoint", contactType: "customer and vendor support", email: "ramashilokgotsofatso@gmail.com", telephone: "+27727718727", areaServed: "ZA", availableLanguage: "English" } },
         { "@type": path === "/" ? "WebSite" : "CollectionPage", "@id": `${SITE_URL}${path === "/" ? "/" : path}#page`, name: title, description, url: `${SITE_URL}${path === "/" ? "/" : path}`, mainEntity: { "@type": "ItemList", numberOfItems: itemSource.length, itemListElement: itemSource.map((item, index) => ({ "@type": "ListItem", position: index + 1, ...item })) } },
+        ...(path === "/" ? [] : [breadcrumbList([
+          { name: "Home", url: "/" },
+          { name: title.split(" | ")[0], url: path },
+        ])]),
       ],
     };
     const listing = path === "/stores" ? storeLinks : productLinks;
-    bodyHtml = `<section class="page-hero seo-server-shell"><div><p class="eyebrow">KOMPO NATION</p><h1>${escapeHtml(title.split(" | ")[0])}</h1><p>${escapeHtml(description)}</p></div></section><section class="content-section seo-server-products">${listing || "<p>New releases are coming soon.</p>"}</section>${path === "/" ? `<section class="content-section"><h2>Explore every independent store</h2><div class="seo-server-products">${storeLinks}</div></section>` : ""}`;
+    const bootstrapCatalogue = escapeHtml(JSON.stringify({ stores, products, media }));
+    bodyHtml = `<template id="kompo-bootstrap-catalogue">${bootstrapCatalogue}</template><section class="page-hero seo-server-shell"><div><p class="eyebrow">KOMPO NATION</p><h1>${escapeHtml(title.split(" | ")[0])}</h1><p>${escapeHtml(description)}</p></div></section><section class="content-section seo-server-products">${listing || "<p>New releases are coming soon.</p>"}</section>${path === "/" ? `<section class="content-section"><h2>Explore every independent store</h2><div class="seo-server-products">${storeLinks}</div></section>` : ""}`;
   } else if (path === "/contact") {
     structuredData = {
       "@context": "https://schema.org",
-      "@type": "ContactPage",
-      name: "Contact Kompo Nation",
-      description,
-      url: `${SITE_URL}/contact`,
-      mainEntity: {
-        "@type": "Organization",
-        name: "Kompo Nation",
-        url: SITE_URL,
-        email: "mailto:ramashilokgotsofatso@gmail.com",
-        telephone: "+27727718727",
-        contactPoint: { "@type": "ContactPoint", contactType: "customer and vendor support", email: "ramashilokgotsofatso@gmail.com", telephone: "+27727718727", areaServed: "ZA", availableLanguage: "English" },
-      },
+      "@graph": [
+        { "@type": "ContactPage", name: "Contact Kompo Nation", description, url: `${SITE_URL}/contact` },
+        { "@type": "Organization", name: "Kompo Nation", url: SITE_URL, email: "mailto:ramashilokgotsofatso@gmail.com", telephone: "+27727718727", contactPoint: { "@type": "ContactPoint", contactType: "customer and vendor support", email: "ramashilokgotsofatso@gmail.com", telephone: "+27727718727", areaServed: "ZA", availableLanguage: "English" } },
+        breadcrumbList([{ name: "Home", url: "/" }, { name: "Contact", url: "/contact" }]),
+      ],
     };
     bodyHtml = `<section class="page-hero seo-server-shell"><div><p class="eyebrow">KOMPO NATION</p><h1>Contact Kompo Nation</h1><p>${escapeHtml(description)}</p></div></section><section class="content-section seo-server-products"><article><h2>Email support</h2><p><a href="mailto:ramashilokgotsofatso@gmail.com">ramashilokgotsofatso@gmail.com</a></p></article><article><h2>Phone and WhatsApp</h2><p><a href="tel:+27727718727">072 771 8727</a></p></article></section>`;
   } else {

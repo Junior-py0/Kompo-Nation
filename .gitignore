@@ -1,3 +1,18 @@
-# Local Netlify folder
-.netlify
-.wrangler
+# Deployment CLI state
+.netlify/
+.wrangler/
+
+# Reinstallable dependencies and local workspace output
+node_modules/
+_patch_backups/
+tmp/
+iot-marketplace-images/
+iot-marketplace-images.zip
+
+# Local configuration and editor/OS files
+.env
+.env.*
+*.local
+.vscode/
+Thumbs.db
+.DS_Store

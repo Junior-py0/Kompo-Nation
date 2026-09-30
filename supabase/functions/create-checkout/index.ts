@@ -428,7 +428,7 @@ Deno.serve(
 
       const order =
         await rpc(
-          "create_payment_checkout_v3",
+          "create_payment_checkout_v4",
           {
             p_provider:
               paymentProvider,

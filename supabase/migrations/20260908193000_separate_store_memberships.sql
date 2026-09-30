@@ -2,7 +2,7 @@ begin;
 
 create table if not exists public.app_memberships (
   user_id uuid not null references auth.users(id) on delete cascade,
-  app_id text not null check (app_id in ('kompo', 'kitora')),
+  app_id text not null check (app_id = 'kompo'),
   created_at timestamptz not null default now(),
   primary key (user_id, app_id)
 );
@@ -26,7 +26,7 @@ security definer
 set search_path = ''
 as $function$
   select auth.uid() is not null
-    and p_app_id in ('kompo', 'kitora')
+    and p_app_id = 'kompo'
     and exists (
       select 1 from public.app_memberships m
       where m.user_id = auth.uid() and m.app_id = p_app_id
@@ -45,7 +45,7 @@ as $function$
 declare
   v_app text := lower(coalesce(new.raw_user_meta_data ->> 'app_id', ''));
 begin
-  if v_app in ('kompo', 'kitora') then
+  if v_app = 'kompo' then
     insert into public.app_memberships(user_id, app_id)
     values (new.id, v_app)
     on conflict do nothing;
@@ -77,18 +77,9 @@ select distinct customer_id, 'kompo' from public.orders
 where customer_id is not null
 on conflict do nothing;
 
-insert into public.app_memberships(user_id, app_id)
-select user_id, 'kitora' from public.iot_admins
-on conflict do nothing;
-
-insert into public.app_memberships(user_id, app_id)
-select distinct user_id, 'kitora' from public.iot_orders
-on conflict do nothing;
-
 do $block$
 declare
   r record;
-  v_app text;
 begin
   for r in
     select tablename
@@ -97,13 +88,12 @@ begin
       and rowsecurity
       and tablename <> 'app_memberships'
   loop
-    v_app := case when r.tablename like 'iot\_%' escape '\' then 'kitora' else 'kompo' end;
     execute format('drop policy if exists app_membership_boundary on public.%I', r.tablename);
     execute format(
       'create policy app_membership_boundary on public.%I as restrictive for all to authenticated using (public.has_app_membership(%L)) with check (public.has_app_membership(%L))',
       r.tablename,
-      v_app,
-      v_app
+      'kompo',
+      'kompo'
     );
   end loop;
 end;
